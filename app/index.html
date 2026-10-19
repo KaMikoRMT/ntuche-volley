@@ -7,6 +7,8 @@
 <meta name="theme-color" content="#8c2333">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
 <style>
     /* 配色與元件沿用 v5：暖色 tokens＋深色模式；紀錄表是「紙」，兩種主題都維持白底黑字 */
     :root {
@@ -2711,6 +2713,22 @@ function resumeLine(m) {
     const i = Math.min(m.curSet, m.sets.length - 1), st = sum.sets[i].state;
     return `vs ${m.opponent}　第 ${i + 1} 局 ${st.score.us}:${st.score.them}`;
 }
+// 有比賽資料、而且超過 7 天沒匯出（或從沒匯出過）就提醒
+function staleBackup() {
+    if (!Object.keys(DB.matches).length && !Object.keys(DB.players).length) return false;
+    return !DB.lastBackupAt || Date.now() - DB.lastBackupAt > 7 * 86400000;
+}
+const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent || '') || (/Macintosh/.test(navigator.userAgent || '') && navigator.maxTouchPoints > 1);
+const isStandalone = (() => { try { return !!navigator.standalone || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches); } catch (e) { return false; } })();
+const A2HS_KEY = 'ntuche-volley-a2hs-hidden';
+function a2hsHidden() { try { return localStorage.getItem(A2HS_KEY) === '1'; } catch (e) { return false; } }
+// iPhone Safari 的網頁資料可能被清掉；加到主畫面的網頁 App 不受影響，所以引導使用者加到主畫面
+function a2hsCardHtml() {
+    if (!isIOS || isStandalone || inFrame || !/^https?:$/.test(location.protocol) || ui.a2hsHidden || a2hsHidden()) return '';
+    return `<div class="card"><h2>加到主畫面</h2><div class="note">在 Safari 按下方的「分享」→「加入主畫面」，之後像 App 一樣打開、沒有網路也能用；而且 Safari 不會因為太久沒開就把資料清掉。</div>
+        <button class="btn-solid ghost small" data-action="a2hs-hide">我知道了，不要再顯示</button></div>`;
+}
+ACT['a2hs-hide'] = () => { ui.a2hsHidden = true; try { localStorage.setItem(A2HS_KEY, '1'); } catch (e) {} render(); };
 function viewHome() {
     const live = liveMatches();
     const s = DB.settings;
@@ -2722,9 +2740,11 @@ function viewHome() {
         h += `<div class="card resume-card"><div class="card-label">比賽還沒結束</div><div class="note">${esc(m.date)}・${esc(resumeLine(m))}</div>
             <button class="btn-solid brand" data-action="resume-match" data-id="${esc(m.id)}">繼續紀錄</button></div>`;
     });
+    h += a2hsCardHtml();
     h += `<button class="btn-solid brand btn-start" data-action="new-match">開新比賽</button>`;
     h += compareCardHtml(filterMatches(DB, null));
     h += `<div class="card"><h2>備份與匯入</h2>
+        ${staleBackup() ? `<div class="banner-warn">${DB.lastBackupAt ? `已經 ${Math.floor((Date.now() - DB.lastBackupAt) / 86400000)} 天沒有備份了` : '還沒有備份過'}，建議現在匯出一份。</div>` : ''}
         <div class="note">上次匯出：${esc(daysAgoText(DB.lastBackupAt))}。資料只存在這支手機上，記得定期匯出；匯出的紀錄檔可以在別的裝置匯入後接著用。</div>
         <button class="btn-solid" data-action="export-all">匯出紀錄檔</button>
         <div class="row"><button class="btn-solid ghost" style="flex:1" data-action="import-file">匯入紀錄檔</button><button class="btn-solid ghost" style="flex:1" data-action="import-paste">貼上文字匯入</button></div>
@@ -3933,6 +3953,7 @@ function reportHtml(m) {
     const resultTag = m.status === 'live' ? '<span class="tagx">進行中</span>' : (sum.done ? `<span class="tagx ${sum.winner === 'us' ? 'win' : 'lose'}">${sum.winner === 'us' ? '勝' : '敗'}</span>` : '<span class="tagx">未分勝負</span>');
     const started = sum.sets.filter(x => x.started);
     let h = `<div class="page-inner col gutter">
+        ${m.status === 'done' && (!DB.lastBackupAt || DB.lastBackupAt < m.updatedAt) ? `<div class="banner-warn">這場比賽還沒備份。<button class="btn-solid small" style="margin-left:8px" data-action="export-all">匯出紀錄檔</button></div>` : ''}
         <div class="card"><div class="rp-top"><div><div class="card-label">vs ${esc(m.opponent)}</div><div class="note">${esc(m.date)}${m.event ? '・' + esc(m.event) : ''}・${esc(teamLabel(DB, m.teamId))}${m.recorder ? '・紀錄：' + esc(m.recorder) : ''}</div></div>${resultTag}</div>
             <div class="rp-top"><span class="rp-result">${sum.us} : ${sum.them}</span><span class="note">${esc(FORMATS[m.format.bestOf === 5 ? 'bo5' : 'bo3'].label)}</span></div>
             <div class="rp-sets">${started.map(x => `<span class="tagx">第 ${x.no} 局 ${x.score.us}:${x.score.them}</span>`).join('') || '<span class="note">還沒有紀錄</span>'}</div></div>
@@ -4192,6 +4213,8 @@ SHEETS.resumePrompt = d => {
         Store.loaded = true;
     }
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+    // 網址版（http／https）才註冊 Service Worker；用 file:// 直接開檔案，或在 claude.ai 的框架裡，就不註冊，其餘功能照常
+    try { if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !inFrame) navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {}
     render();
     if (typeof afterBoot === 'function') afterBoot();
 })();
