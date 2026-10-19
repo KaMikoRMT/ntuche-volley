@@ -382,6 +382,23 @@
     .rtable tr.team td { font-weight: 800; background: var(--bg); }
     .rtable tr.team td:first-child { background: var(--bg); }
     .rtable td.g { border-left: 1px solid var(--line); }
+    .rv-head { display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; font-size: 13px; color: var(--muted); font-weight: 700; }
+    .rv-head b { color: var(--ink); font-size: 17px; }
+    .rv-result { font-size: 16px; font-weight: 800; line-height: 1.4; }
+    .rv-sec { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+    .rv-sec > b { font-size: 13px; color: var(--muted); }
+    .rv-sec > b small { font-weight: 500; }
+    .rv-grades { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+    .rv-grades button, .rv-two button, .rv-acts button { border: none; border-radius: 8px; min-height: 52px; font-weight: 800; font-size: 16px; color: var(--on-btn); padding: 2px 4px; }
+    .rv-grades button.good, .rv-two button.good { background: var(--score); }
+    .rv-grades button.poor { background: var(--cont); }
+    .rv-grades button.err, .rv-two button.bad, .rv-acts button { background: var(--loss); }
+    .rv-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+    .rv-acts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+    .rv-acts button.opp { background: var(--loss-team); }
+    .rv-nav { display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 8px; }
+    .rv-nav button { min-height: 52px; }
+    .chip.done { background: var(--chip); border-style: dashed; }
     .def-row { padding-block: 8px; border-top: 1px solid var(--line); }
     .def-row:first-child { border-top: none; }
     .def-row b { display: block; font-size: 14px; }
@@ -469,6 +486,17 @@
         </div>
     </div>
     <div class="page" id="reportPage"></div>
+</div>
+
+<!-- ============ 逐球覆盤 ============ -->
+<div id="reviewView" class="view">
+    <div class="pv-bar">
+        <div class="pv-bar-inner gutter">
+            <button class="pv-btn" data-action="review-back">← 返回</button>
+            <span class="pv-title" id="rvTitle"></span>
+        </div>
+    </div>
+    <div class="page" id="reviewPage"></div>
 </div>
 
 <!-- ============ 圖片（長按儲存） ============ -->
@@ -1179,7 +1207,7 @@ function computeMatchStats(match, db, opts) {
         let cu = 0, ct = 0;
         st.rallies.forEach(r => {
             rallies++;
-            if (r.pending) pendingCount++;
+            if (r.pending && !r.end.resolved) pendingCount++;
             if (r.winner === 'us') { cu++; ct = 0; if (cu > runs.us.n) runs.us = { n: cu, set: i + 1 }; }
             else { ct++; cu = 0; if (ct > runs.them.n) runs.them = { n: ct, set: i + 1 }; }
             if (r.serve === 'us' && r.server) {
@@ -1387,6 +1415,67 @@ function restoreConflict(db, cid) {
     db.matches[c.matchId] = touch(clone(c.match));
     return true;
 }
+
+/* ===== 覆盤（P5）：覆盤資料另外存在 match.review，不改動 log ===== */
+const DIG_TYPES = [['spike', '接扣'], ['tip', '接吊'], ['cover', 'Cover'], ['free', '接嗆司']];
+const RECEIVE_GRADES = [['good', '到位'], ['poor', '不到位'], ['err', '失誤']];
+// 全場每一球（依局、依序）
+function listRallies(match) {
+    const out = [];
+    match.sets.forEach((set, i) => replaySet(set, match).rallies.forEach(r => out.push({ setIdx: i, no: r.no, id: r.id, rally: r })));
+    return out;
+}
+function rallyResolved(match, rid) { return !!(match.review[rid] && match.review[rid].resolve); }
+// 覆盤佇列：先列所有「待確認、還沒補原因」的球，再依序列其他球。scope: { setIdx, serveThemOnly }
+function reviewQueue(match, scope) {
+    const sc = scope || {};
+    const items = listRallies(match).filter(it => {
+        if (typeof sc.setIdx === 'number' && it.setIdx !== sc.setIdx) return false;
+        if (sc.serveThemOnly && it.rally.serve !== 'them') return false;
+        return true;
+    });
+    const pend = it => it.rally.pending && !rallyResolved(match, it.id);
+    return items.filter(pend).concat(items.filter(it => !pend(it)));
+}
+function reviewProgress(match, scope) {
+    const q = reviewQueue(match, scope);
+    return { total: q.length, done: q.filter(it => match.review[it.id] && match.review[it.id].reviewed).length };
+}
+// 這一球開始時場上是誰（沒有追蹤輪轉的局回傳 null）
+function lineupBefore(match, setIdx, rallyId) {
+    const set = match.sets[setIdx];
+    const idx = set.log.findIndex(e => e.id === rallyId);
+    if (idx < 0) return null;
+    const st = replaySet({ no: set.no, firstServe: set.firstServe, lineup: set.lineup, log: set.log.slice(0, idx) }, match);
+    return st.rotation ? { onCourt: st.onCourt.filter(Boolean), libero: st.libero } : null;
+}
+function parseClock(text) {
+    const m = /^\s*(\d{1,3}):([0-5]?\d)\s*$/.exec(String(text || ''));
+    return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+// 影片對時：使用者說第一球在影片的幾分幾秒，之後每球用事件的牆上時間差推估
+function rallyVideoSec(match, rally) {
+    const v = match.videoSync;
+    if (!v || typeof v.t !== 'number' || typeof v.sec !== 'number' || !rally.t) return null;
+    return Math.max(0, Math.round(v.sec + (rally.t - v.t) / 1000));
+}
+function reviewEntryOf(match, rid) {
+    if (!match.review[rid]) match.review[rid] = { reviewed: true, receive: null, digs: [], attacksDug: [], resolve: null, note: '' };
+    const e = match.review[rid];
+    if (!Array.isArray(e.digs)) e.digs = [];
+    if (!Array.isArray(e.attacksDug)) e.attacksDug = [];
+    e.reviewed = true;
+    touch(match);
+    return e;
+}
+function reviewSetReceive(match, rid, p, grade) { reviewEntryOf(match, rid).receive = p ? { p, grade } : null; }
+function reviewAddDig(match, rid, p, ok, type) { reviewEntryOf(match, rid).digs.push({ p, type: type || '', ok: !!ok }); }
+function reviewRemoveDig(match, rid, i) { reviewEntryOf(match, rid).digs.splice(i, 1); }
+function reviewAddDug(match, rid, p) { reviewEntryOf(match, rid).attacksDug.push(p); }
+function reviewRemoveDug(match, rid, i) { reviewEntryOf(match, rid).attacksDug.splice(i, 1); }
+// 待確認補原因：resolve = { p, skill, det }；p 為 null 代表「其實是對手好球」
+function reviewSetResolve(match, rid, resolve) { reviewEntryOf(match, rid).resolve = resolve || null; }
+function reviewMarkDone(match, rid) { reviewEntryOf(match, rid); }
 
 /* ===== 報告與 CSV（P4） ===== */
 function fmtPct(x) { return x == null ? '—' : (Math.round(x * 1000) / 10).toFixed(1) + '%'; }
@@ -1925,6 +2014,61 @@ function runSelfTests() {
         eq([r2.created, r2.merged], [1, 0]); eq(Object.keys(db.players).length, 3);
     });
 
+    // ---- P5：逐球覆盤 ----
+    T('覆盤佇列：待確認排最前，補完原因後回到時間順序；進度；範圍篩選', () => {
+        const m = newMatch({ formatKey: 'bo3' }); m.sets[0].firstServe = 'them';
+        const e1 = E('attack', 'pt', 'P', 'spike'), e2 = E('team', 'opp_pt', null, '', { pending: true }), e3 = E('receive', 'err', 'R'), e4 = E('team', 'opp_pt', null, '', { pending: true });
+        m.sets[0].log.push(e1, e2, e3, e4); m.sets[1].log.push(E('attack', 'pt', 'Q', 'spike'));
+        eq(reviewQueue(m).map(it => it.id), [e2.id, e4.id, e1.id, e3.id, m.sets[1].log[0].id], '待確認排最前');
+        eq(reviewQueue(m, { setIdx: 1 }).length, 1, '只看第 2 局');
+        eq(reviewProgress(m), { total: 5, done: 0 });
+        reviewSetResolve(m, e2.id, { p: 'X', skill: 'attack', det: 'spike' });
+        eq(reviewQueue(m).map(it => it.id).slice(0, 2), [e4.id, e1.id], '補完原因的球離開最前面');
+        eq(reviewProgress(m), { total: 5, done: 1 }, '補原因也算已覆盤');
+        eq(reviewQueue(m, { serveThemOnly: true }).map(it => it.rally.serve), ['them', 'them', 'them'].slice(0, reviewQueue(m, { serveThemOnly: true }).length));
+    });
+    T('覆盤：接發、防守、被守起寫進 review，統計只計已覆盤的球；log 不被改動', () => {
+        const m = newMatch({ formatKey: 'bo3' }); m.sets[0].firstServe = 'them';
+        const e1 = E('attack', 'pt', 'A', 'spike'), e2 = E('team', 'opp_pt');
+        m.sets[0].log.push(e1, e2);
+        const logBefore = JSON.stringify(m.sets[0].log);
+        reviewSetReceive(m, e1.id, 'R', 'good'); reviewAddDig(m, e1.id, 'D', true, 'spike'); reviewAddDig(m, e1.id, 'D2', false); reviewAddDug(m, e1.id, 'A'); reviewAddDug(m, e1.id, 'B');
+        const s = computeMatchStats(m, null);
+        eq([s.players.R.receive.good, s.players.R.receive.rate], [1, 1]); eq([s.players.D.dig.ok, s.players.D2.dig.no], [1, 1]);
+        eq([s.players.A.attack.dug, s.players.B.attack.dug, s.team.attack.total], [1, 1, 3], '覆盤補記的被守起進攻擊總數');
+        eq(JSON.stringify(m.sets[0].log), logBefore, 'log 不變');
+        reviewRemoveDig(m, e1.id, 1); reviewRemoveDug(m, e1.id, 1); reviewSetReceive(m, e1.id, null);
+        const s2 = computeMatchStats(m, null);
+        eq([s2.team.dig.no, s2.team.attack.dug, s2.team.receive.total], [0, 1, 0], '移除後統計跟著變');
+        eq(m.review[e1.id].reviewed, true); eq(m.review[e2.id], undefined, '沒碰的球不會產生覆盤資料');
+        ok(parseDbText(JSON.stringify(Object.assign(newDb(), { matches: { [m.id]: m } }))).ok, '存得進資料庫格式');
+    });
+    T('覆盤：待確認補上原因後計入該球員，紀錄表與報告同步；補成對手好球則歸團隊', () => {
+        const m = newMatch({ formatKey: 'bo3' });
+        const e1 = E('team', 'opp_pt', null, '', { pending: true, ts: '03:00' }), e2 = E('team', 'opp_pt', null, '', { pending: true });
+        m.sets[0].log.push(e1, e2);
+        eq(computeMatchStats(m, null).pendingCount, 2);
+        reviewSetResolve(m, e1.id, { p: 'Q', skill: 'set', det: 'setter' }); reviewSetResolve(m, e2.id, { p: null });
+        const sc = sheetCounts(m), st = computeMatchStats(m, null);
+        eq(sc.byPlayer.Q[0].loss, { 舉球: 1 }); eq(sc.team[0], { oppErr: 0, oppGood: 1 }, '補成對手好球');
+        eq([st.pendingCount, st.players.Q.loss, st.team.losses.對手好球, st.team.losses.待確認 || 0], [0, 1, 1, 0]);
+        eq(sc.timelines[0].map(t => t.isPending), [true, true], '軌跡仍標黃');
+        reviewSetResolve(m, e1.id, null);
+        eq(computeMatchStats(m, null).pendingCount, 1, '清除原因後又變回待確認');
+    });
+    T('覆盤：場上是誰（這一球開始時）與影片對時', () => {
+        const m = fixtureMatch();
+        const ids = m.sets[0].log.filter(e => e.out !== 'cont').map(e => e.id);
+        eq(lineupBefore(m, 0, ids[0]).onCourt, ['X', 'Y', 'Z', 'A', 'B', 'C']);
+        eq(lineupBefore(m, 0, ids[4]).onCourt[0], 'X', '第 5 球開始時還沒輪轉');
+        eq(lineupBefore(m, 1, 'nope'), null);
+        const m2 = newMatch({ formatKey: 'bo3' }); m2.sets[0].log.push(E('team', 'opp_err'));
+        eq(lineupBefore(m2, 0, m2.sets[0].log[0].id), null, '沒追蹤輪轉');
+        const t0 = Date.now(); m.videoSync = { t: t0, sec: 192 };
+        eq(rallyVideoSec(m, { t: t0 + 90000 }), 282); eq(rallyVideoSec(m, { t: t0 - 500000 }), 0); eq(rallyVideoSec(fixtureMatch(), { t: t0 }), null);
+        eq([parseClock('03:12'), parseClock('3:5'), parseClock('abc'), parseClock('1:75')], [192, 185, null, null]);
+    });
+
     // ---- P4：報告、CSV、歷史 ----
     T('模擬整場對帳：報告數字與手算（逐筆計數）一致', () => {
         let seed = 20261019;
@@ -2426,7 +2570,7 @@ function renderTabs() {
     page.scrollTop = keep;
     document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === ui.tab));
 }
-let RENDERERS = { live: () => {}, preview: () => {}, report: () => {} };
+let RENDERERS = { live: () => {}, preview: () => {}, report: () => {}, review: () => {} };
 function render() {
     const v = topView();
     document.querySelectorAll('.view').forEach(el => el.classList.toggle('active', el.id === v + 'View'));
@@ -3465,7 +3609,9 @@ function reportHtml(m) {
         ${rowHtml('全隊', t, 'team')}</tbody></table></div>
         <div class="note">左右滑動看完整欄位。${a.noteHigh ? '此場未記錄被守起，攻擊成功率會偏高。' : ''}</div></div>`;
     // 動作
+    const prog = reviewProgress(m, {});
     h += `<div class="card rp-card"><h2>匯出與其他</h2>
+        <button class="btn-solid brand block" data-action="open-review" data-id="${esc(m.id)}">逐球覆盤（已覆盤 ${prog.done}／${prog.total} 球）</button>
         <button class="btn-solid brand block" data-action="open-preview" data-id="${esc(m.id)}">正字紀錄表（PNG／PDF）</button>
         <button class="btn-solid block" data-action="export-csv">匯出${scope}數據表（CSV）</button>
         <button class="btn-solid ghost block" data-action="export-match" data-id="${esc(m.id)}">匯出這一場的紀錄檔（.json）</button>
@@ -3502,6 +3648,166 @@ ACT['reopen-match'] = el => {
     commit(db => { const mm = db.matches[el.dataset.id]; mm.status = 'live'; touch(mm); });
     closeSheet(); openLive(el.dataset.id);
 };
+
+/* ===== VIEW_REVIEW：逐球覆盤（每一球 0～3 下點擊；可以只覆盤一部分） ===== */
+ui.review = null;
+const rvMatch = () => DB.matches[ui.review.matchId];
+function rvScope() { return { setIdx: ui.review.setIdx === null ? undefined : ui.review.setIdx, serveThemOnly: ui.review.serveOnly }; }
+function rvReset() { Object.assign(ui.review, { recvP: null, dig: null, resolveP: null }); }
+function rvRebuild(jumpToFirstUndone) {
+    const m = rvMatch(), q = reviewQueue(m, rvScope());
+    ui.review.order = q.map(it => it.id);
+    let i = 0;
+    if (jumpToFirstUndone) { i = q.findIndex(it => !(m.review[it.id] && m.review[it.id].reviewed)); if (i < 0) i = 0; }
+    ui.review.idx = i;
+    rvReset();
+}
+function openReview(id) {
+    closeSheet();
+    ui.review = { matchId: id, setIdx: null, serveOnly: false, order: [], idx: 0, all: false, recvP: null, dig: null, resolveP: null };
+    rvRebuild(true);
+    pushView('review');
+}
+ACT['open-review'] = el => openReview(el.dataset.id);
+ACT['review-back'] = () => backView();
+ACT['rv-set'] = el => { ui.review.setIdx = el.dataset.v === '' ? null : Number(el.dataset.v); rvRebuild(true); render(); };
+ACT['rv-serve'] = () => { ui.review.serveOnly = !ui.review.serveOnly; rvRebuild(true); render(); };
+ACT['rv-all'] = () => { ui.review.all = !ui.review.all; render(); };
+function rvName(m, pid) { return nameOfIn(m, DB, pid); }
+function rvCands(m, item) {
+    if (ui.review.all) return m.roster.map(r => r.playerId);
+    const lu = lineupBefore(m, item.setIdx, item.id);
+    if (!lu) return m.roster.map(r => r.playerId);
+    return lu.onCourt.concat(lu.libero ? [lu.libero] : []);
+}
+function rvChips(m, item, action, selected) {
+    return `<div class="chips">${rvCands(m, item).map(id => `<button type="button" class="chip${selected === id ? ' on' : ''}" data-action="${action}" data-id="${esc(id)}">${esc(rvName(m, id))}</button>`).join('')}</div>`;
+}
+function rvResultText(m, rally) {
+    const nm = id => rvName(m, id);
+    if (rally.end.pending) return '待確認（還沒補上原因）';
+    const t = describeEntry(rally.end, nm);
+    return rally.end.resolved ? `${t}（待確認補上）` : t;
+}
+function renderReview() {
+    const m = rvMatch();
+    if (!m) { ui.viewStack = ['tabs']; render(); return; }
+    const rv = ui.review, page = $('#reviewPage');
+    $('#rvTitle').textContent = `逐球覆盤・vs ${m.opponent}`;
+    const all = listRallies(m), byId = {};
+    all.forEach(it => { byId[it.id] = it; });
+    const prog = reviewProgress(m, rvScope());
+    const started = matchSummary(m).sets.filter(x => x.started);
+    const vs = m.videoSync ? `${pad2(Math.floor(m.videoSync.sec / 60))}:${pad2(m.videoSync.sec % 60)}` : '';
+    let h = `<div class="page-inner col gutter">
+        <div class="card"><div class="chips">${chipsHtml([{ value: '', label: '全部' }].concat(started.map(x => ({ value: String(x.no - 1), label: `第 ${x.no} 局` }))), [rv.setIdx === null ? '' : String(rv.setIdx)], 'rv-set')}
+            <button type="button" class="chip${rv.serveOnly ? ' on' : ''}" data-action="rv-serve">只看對方發球的球</button></div>
+            <div class="rp-top"><b>已覆盤 ${prog.done}／${prog.total} 球</b><button class="btn-solid ghost small" data-action="rv-list">看全部球</button></div>
+            <div class="stat-bar"><i style="width:${prog.total ? prog.done / prog.total * 100 : 0}%;background:var(--score)"></i></div>
+            <div class="note">待確認的球排在最前面，補完原因就會算進那位球員。不覆盤的球不影響其他數據；覆盤到一半離開，進度會保留。</div>
+            <div class="row"><input class="input-text" data-field="rvVideo" value="${esc(F('rvVideo', vs))}" placeholder="影片對時：第一球在影片 03:12" autocomplete="off" aria-label="影片對時"><button class="btn-solid ghost small" data-action="rv-video">設定</button></div></div>`;
+    const rid = rv.order[rv.idx];
+    if (!rid || !byId[rid]) {
+        page.innerHTML = h + `<div class="card"><div class="empty">${prog.total ? '這個範圍的球都看過了。' : '這個範圍沒有球。'}</div><button class="btn-solid brand block" data-action="review-back">回到報告</button>${rv.idx > 0 ? '<button class="btn-solid ghost block" data-action="rv-prev">← 上一球</button>' : ''}</div></div>`;
+        return;
+    }
+    const item = byId[rid], r = item.rally, e = m.review[rid] || {};
+    const pendingOpen = r.pending && !rallyResolved(m, rid);
+    const who = r.serve === 'us' ? '我方發球' : r.serve === 'them' ? '對方發球' : '發球方未知';
+    const sec = rallyVideoSec(m, r);
+    h += `<div class="card"><div class="rv-head"><b>第 ${item.no} 球</b><span>第 ${item.setIdx + 1} 局</span><span>我 ${r.score.us}:${r.score.them} 對</span><span>${who}${r.server ? '：' + esc(rvName(m, r.server)) : ''}</span>${sec !== null ? `<span>影片約 ${pad2(Math.floor(sec / 60))}:${pad2(sec % 60)}</span>` : ''}<span>${rv.idx + 1}／${rv.order.length}</span></div>
+        <div class="rv-result">結果：${esc(rvResultText(m, r))}</div>`;
+    const liveDug = r.events.filter(x => x.out === 'cont').map(x => rvName(m, x.p));
+    if (liveDug.length) h += `<div class="note">賽中記到：${liveDug.map(esc).join('、')} 攻擊被守起</div>`;
+    if (r.pending) {
+        h += `<div class="rv-sec"><b>這一球是誰、怎麼失分？ <small>（待確認，必填）</small></b>`;
+        if (e.resolve) {
+            const t = e.resolve.p ? `${esc(rvName(m, e.resolve.p))}・${esc(describeEntry(r.end, id => rvName(m, id)).split('・')[1] || '')}` : '對手好球';
+            h += `<div class="chips"><button class="chip on" data-action="rv-res-clear">${t} ✕</button></div>`;
+        } else {
+            h += rvChips(m, item, 'rv-res-p', rv.resolveP);
+            if (rv.resolveP) h += `<div class="rv-acts">${ACTIONS.filter(a => a.group === 'loss').map(a => `<button data-action="rv-resolve" data-a="${a.id}">${esc(a.label)}</button>`).join('')}</div>`;
+            h += '<button class="btn-solid ghost small" data-action="rv-resolve-opp">其實是對手好球（不歸給我方球員）</button>';
+        }
+        h += '</div>';
+    }
+    if (r.serve === 'them') {
+        h += `<div class="rv-sec"><b>接發 <small>（到位：舉球員在進攻線前、可以用上手舉球）</small></b>`;
+        if (e.receive) h += `<div class="chips"><button class="chip on" data-action="rv-recv-clear">${esc(rvName(m, e.receive.p))}・${esc((RECEIVE_GRADES.find(g => g[0] === e.receive.grade) || [0, ''])[1])} ✕</button></div>`;
+        else {
+            h += rvChips(m, item, 'rv-recv-p', rv.recvP);
+            if (rv.recvP) h += `<div class="rv-grades">${RECEIVE_GRADES.map(g => `<button class="${g[0]}" data-action="rv-grade" data-g="${g[0]}">${g[1]}</button>`).join('')}</div>`;
+        }
+        h += '</div>';
+    }
+    h += `<div class="rv-sec"><b>防守 <small>（起球：球被接起、比賽繼續；沒起：直接落地或出界）</small></b>`;
+    const digs = e.digs || [];
+    if (digs.length) h += `<div class="chips">${digs.map((d, i) => `<button class="chip on" data-action="rv-dig-del" data-i="${i}">${esc(rvName(m, d.p))}・${d.ok ? '起球' : '沒起'}${d.type ? '・' + esc((DIG_TYPES.find(t => t[0] === d.type) || [0, ''])[1]) : ''} ✕</button>`).join('')}</div>`;
+    if (!rv.dig) h += '<div class="rv-two"><button class="good" data-action="rv-dig-start" data-ok="1">＋ 起球</button><button class="bad" data-action="rv-dig-start" data-ok="0">＋ 沒起</button></div>';
+    else if (!rv.dig.p) h += `<div class="note">${rv.dig.ok ? '起球' : '沒起'}的是誰？</div>${rvChips(m, item, 'rv-dig-p', null)}<button class="btn-solid ghost small" data-action="rv-dig-cancel">取消</button>`;
+    else h += `<div class="note">${esc(rvName(m, rv.dig.p))}・${rv.dig.ok ? '起球' : '沒起'}，是哪一種？（可略）</div><div class="chips">${DIG_TYPES.map(t => `<button type="button" class="chip" data-action="rv-dig-type" data-t="${t[0]}">${t[1]}</button>`).join('')}<button type="button" class="chip" data-action="rv-dig-type" data-t="">略過</button></div>`;
+    h += '</div>';
+    const dug = e.attacksDug || [];
+    h += `<div class="rv-sec"><b>攻擊被守起 <small>（賽中沒記到的；可多次）</small></b>${dug.length ? `<div class="chips">${dug.map((pid, i) => `<button class="chip on" data-action="rv-dug-del" data-i="${i}">${esc(rvName(m, pid))} ✕</button>`).join('')}</div>` : ''}${rvChips(m, item, 'rv-dug-p', null)}</div>`;
+    h += `<button type="button" class="chip${rv.all ? ' on' : ''}" data-action="rv-all">${rv.all ? '只列場上球員' : '列出全部球員'}</button></div>
+        <div class="rv-nav"><button class="btn-solid ghost" data-action="rv-prev" ${rv.idx ? '' : 'disabled'}>← 上一球</button><button class="btn-solid ghost" data-action="rv-skip">跳過</button><button class="btn-solid brand" data-action="rv-next">${rv.idx >= rv.order.length - 1 ? '完成' : '下一球 →'}</button></div></div>`;
+    const keep = renderReview.last === rid ? page.scrollTop : 0;
+    renderReview.last = rid;
+    page.innerHTML = h;
+    page.scrollTop = keep;
+}
+RENDERERS.review = renderReview;
+function rvCommit(fn) { const id = ui.review.matchId; commit(db => { fn(db.matches[id]); }); }
+function rvRid() { return ui.review.order[ui.review.idx]; }
+ACT['rv-recv-p'] = el => { ui.review.recvP = ui.review.recvP === el.dataset.id ? null : el.dataset.id; render(); };
+ACT['rv-grade'] = el => { const p = ui.review.recvP, rid = rvRid(); ui.review.recvP = null; rvCommit(m => reviewSetReceive(m, rid, p, el.dataset.g)); };
+ACT['rv-recv-clear'] = () => { const rid = rvRid(); rvCommit(m => reviewSetReceive(m, rid, null)); };
+ACT['rv-dig-start'] = el => { ui.review.dig = { ok: el.dataset.ok === '1', p: null }; render(); };
+ACT['rv-dig-cancel'] = () => { ui.review.dig = null; render(); };
+ACT['rv-dig-p'] = el => { ui.review.dig.p = el.dataset.id; render(); };
+ACT['rv-dig-type'] = el => { const d = ui.review.dig, rid = rvRid(); ui.review.dig = null; rvCommit(m => reviewAddDig(m, rid, d.p, d.ok, el.dataset.t)); };
+ACT['rv-dig-del'] = el => { const rid = rvRid(), i = Number(el.dataset.i); rvCommit(m => reviewRemoveDig(m, rid, i)); };
+ACT['rv-dug-p'] = el => { const rid = rvRid(); rvCommit(m => reviewAddDug(m, rid, el.dataset.id)); };
+ACT['rv-dug-del'] = el => { const rid = rvRid(), i = Number(el.dataset.i); rvCommit(m => reviewRemoveDug(m, rid, i)); };
+ACT['rv-res-p'] = el => { ui.review.resolveP = ui.review.resolveP === el.dataset.id ? null : el.dataset.id; render(); };
+ACT['rv-resolve'] = el => {
+    const a = ACTION_BY_ID[el.dataset.a], p = ui.review.resolveP, rid = rvRid();
+    ui.review.resolveP = null;
+    rvCommit(m => reviewSetResolve(m, rid, { p, skill: a.skill, det: a.det || '' }));
+};
+ACT['rv-resolve-opp'] = () => { const rid = rvRid(); ui.review.resolveP = null; rvCommit(m => reviewSetResolve(m, rid, { p: null })); };
+ACT['rv-res-clear'] = () => { const rid = rvRid(); rvCommit(m => reviewSetResolve(m, rid, null)); };
+function rvGo(i) { ui.review.idx = i; rvReset(); render(); $('#reviewPage').scrollTop = 0; }
+ACT['rv-prev'] = () => { if (ui.review.idx > 0) rvGo(ui.review.idx - 1); };
+ACT['rv-skip'] = () => rvGo(Math.min(ui.review.order.length, ui.review.idx + 1));
+ACT['rv-next'] = () => {
+    const m = rvMatch(), rid = rvRid();
+    if (m.sets.length && listRallies(m).some(it => it.id === rid && it.rally.pending) && !rallyResolved(m, rid)) { gtoast('待確認的球要先補上原因，或按「跳過」'); return; }
+    rvCommit(mm => reviewMarkDone(mm, rid));
+    if (ui.review.idx >= ui.review.order.length - 1) { gtoast('這個範圍都覆盤完了'); }
+    rvGo(Math.min(ui.review.order.length, ui.review.idx + 1));
+};
+ACT['rv-video'] = () => {
+    const m = rvMatch(), text = String(F('rvVideo', '')).trim();
+    if (!text) { rvCommit(mm => { delete mm.videoSync; touch(mm); }); gtoast('已清除影片對時'); return; }
+    const sec = parseClock(text);
+    if (sec === null) { gtoast('時間格式是 分:秒，例如 03:12'); return; }
+    const first = listRallies(m)[0];
+    if (!first) { gtoast('還沒有任何一球'); return; }
+    rvCommit(mm => { mm.videoSync = { t: first.rally.t, sec }; touch(mm); });
+    gtoast('已設定影片對時');
+};
+ACT['rv-list'] = () => openSheet('rvList', {});
+SHEETS.rvList = () => {
+    const m = rvMatch(), byId = {};
+    listRallies(m).forEach(it => { byId[it.id] = it; });
+    return {
+        title: '全部球', sub: `${ui.review.order.length} 球`,
+        html: `<div class="list">${ui.review.order.map((id, i) => { const it = byId[id], e = m.review[id], done = e && e.reviewed, pend = it.rally.pending && !rallyResolved(m, id);
+            return `<button class="list-row${i === ui.review.idx ? '' : ''}" data-action="rv-jump" data-i="${i}"><span class="lr-num">${it.no}</span><span class="lr-main"><span class="lr-title">${esc(rvResultText(m, it.rally))}</span><span class="lr-sub">第 ${it.setIdx + 1} 局　${it.rally.score.us}:${it.rally.score.them}${it.rally.serve === 'them' ? '　對方發球' : ''}</span></span>${pend ? '<span class="tagx">待確認</span>' : done ? '<span class="tagx win">已覆盤</span>' : ''}</button>`; }).join('')}</div>`
+    };
+};
+ACT['rv-jump'] = el => { closeSheet(); rvGo(Number(el.dataset.i)); };
 
 /* ===== 啟動後：有進行中的比賽就提示繼續 ===== */
 function afterBoot() {
