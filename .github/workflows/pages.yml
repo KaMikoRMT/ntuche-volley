@@ -1,9 +1,16 @@
 # 把 app/ 資料夾發佈成 GitHub Pages 網站。
-# 只能手動執行（Actions 頁籤 → Run workflow），不會自動跑；而且要先在 repo 的 Settings → Pages
-# 把 Source 設成「GitHub Actions」才會成功（免費帳號的 Pages 需要公開的 repo，見 docs/PROGRESS.md 的 P7）。
+# 只要有東西合併進 main 並且動到 app/ 或這個檔案，就會自動先跑 node tests/selftest.mjs，通過才發佈；
+# 也可以隨時在 Actions 頁籤手動執行（Run workflow）。
+# 前提：repo 是公開的，而且 Settings → Pages 的 Source 設成「GitHub Actions」（已設好）。
 name: Deploy app to GitHub Pages
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'tests/**'
+      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:

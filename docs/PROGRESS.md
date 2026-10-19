@@ -8,7 +8,7 @@
 | P4 比賽歷史與本場報告 | 完成 | 見下方「P4」 |
 | P5 逐球覆盤 | 完成 | 見下方「P5」 |
 | P6 跨場分析與球員生涯 | 完成 | 見下方「P6」 |
-| P7 部署與手機 | 檔案完成，網址發佈等你決定 | 見下方「P7」；GitHub Pages 需要你決定 repo 是否公開，我沒有開 |
+| P7 部署與手機 | 完成（網址已發佈，使用者已用 iPhone 實測，沒有發現問題） | 見下方「P7」；網址 https://kamikormt.github.io/ntuche-volley/ |
 
 ## P1：基礎與資料
 
@@ -242,7 +242,7 @@
 - `app/sw.js`（Service Worker）：程式本體網路優先（約 2.5 秒沒回應就用快取）、離線用快取；匯出用的 html2canvas／jsPDF（cdnjs）第一次用過就存起來，之後離線也能匯出。**只有網址版（http／https）才註冊；用 `file://` 開檔案或在 claude.ai 的框架裡不註冊，其餘功能照常**。
 - 匯出備援鏈（第 7.3 節）：分享選單（手機）→ `<a download>` → claude.ai 的 downloads → 文字框＋複製；圖片存不了時全螢幕顯示讓人長按儲存（P1、P3 已做，這裡沒有改）。
 - iOS 儲存風險的處理（第 3.2 節）：啟動時呼叫 `navigator.storage.persist()`；iPhone Safari 上（還沒加到主畫面時）首頁會出現「加到主畫面」說明卡（可關掉、記在 localStorage）；首頁「備份與匯入」超過 7 天沒匯出（或從沒匯出過）會提醒；剛結束的比賽報告頂端若還沒備份會提醒並附「匯出紀錄檔」按鈕。
-- `.github/workflows/pages.yml`：把 `app/` 發佈成 GitHub Pages 的工作流程，**只能手動執行**（`workflow_dispatch`），先跑 `node tests/selftest.mjs`；在你決定並在 Settings → Pages 把 Source 設成「GitHub Actions」之前不會做任何事。
+- `.github/workflows/pages.yml`：把 `app/` 發佈成 GitHub Pages 的工作流程。**合併進 `main` 且動到 `app/`、`tests/` 或這個檔案時自動執行**（先跑 `node tests/selftest.mjs`，通過才發佈），也可以在 Actions 頁籤手動執行（`workflow_dispatch`）。
 - README 補上使用方式。
 - 驗證（Chromium）：
   - http 下 Service Worker 註冊並啟動、manifest 與兩張圖示都載得到；第一次載入後切成離線再重新整理，程式照常打開、資料還在、可以看到先前新增的球員。
@@ -250,10 +250,10 @@
   - 模擬 iPhone Safari 的 User-Agent：「加到主畫面」說明卡出現；按「我知道了」後消失，重新整理仍然隱藏。
 - `node tests/selftest.mjs` 53 項全過（P7 沒有新增純邏輯）。
 
-**要等你決定、我沒有做的**
+**已發佈**
 
-1. **GitHub Pages 的網址**（ARCHITECTURE 第 11 節第 1 項）：免費帳號的 Pages 需要公開的 repo。選項 A：把這個 repo 改成公開；選項 B：另開一個只放 `app/` 的公開 repo，把 `app/` 內容放進去。決定後，在 Settings → Pages 把 Source 選「GitHub Actions」，再到 Actions 頁籤手動執行「Deploy app to GitHub Pages」就會得到網址（選項 B 的話，把 `app/` 內容放在新 repo 的根目錄，工作流程的 `path: app` 改成 `path: .`）。我沒有開 Pages、也沒有改 repo 可見度。
-2. **iPhone 真機驗收**（加入主畫面、離線開啟、匯出紀錄檔到「檔案」、傳到 LINE、匯入）：需要真的有網址才能測，你測過的 claude.ai 連結不是同一條路。
+1. **GitHub Pages 的網址**（ARCHITECTURE 第 11 節第 1 項）：使用者選了選項 A，把這個 repo 改成公開、Settings → Pages 的 Source 設成「GitHub Actions」；PR #1 合併後手動執行發佈流程成功，網址是 **https://kamikormt.github.io/ntuche-volley/**。我的執行環境連不到 github.io，所以沒有從我這邊打開過這個網址，內容是否正確要等使用者用手機確認。
+2. **iPhone 真機驗收**（加入主畫面、離線開啟、匯出紀錄檔到「檔案」、傳到 LINE、匯入、P4～P6 的畫面）：使用者已在網址版上用 iPhone 實測，回報沒有發現問題（只有「沒有問題」的整體回報，沒有逐項紀錄）。
 
 **沒有實測的畫面項目（P7）**
 
@@ -267,7 +267,7 @@
 - 2026-10-19・P7・**Service Worker 程式本體用「網路優先」而不是「快取優先」**：這是會頻繁改版的程式，快取優先會讓使用者一直卡在舊版；網路不好時 2.5 秒就退回快取，賽場訊號差時也打得開。
 - 2026-10-19・P7・**加到主畫面的說明卡只在 iPhone／iPad Safari 的網址版顯示**；`file://`、claude.ai 框架、已經是主畫面 App 時都不顯示。
 - 2026-10-19・P7・**備份提醒的門檻是 7 天**（呼應第 3.2 節 iOS 的 7 天清除規則）。
-- 2026-10-19・P7・**Pages 工作流程做成只能手動執行**，避免在你還沒決定 repo 可見度、沒有開 Pages 時，每次合併 main 都跑出一個失敗的檢查。
+- 2026-10-19・P7・**Pages 工作流程一開始只能手動執行**（repo 還是私人、Pages 還沒開時，每次合併都會跑出失敗的檢查）；使用者公開 repo、開啟 Pages 並要求「每次合併就自動發佈」之後，改成合併進 `main` 且動到 `app/`、`tests/` 或工作流程檔時自動執行（只改文件的合併不會重新發佈），並保留手動執行。
 
 ## 沒有實測的畫面項目
 
