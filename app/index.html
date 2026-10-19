@@ -399,6 +399,24 @@
     .rv-nav { display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 8px; }
     .rv-nav button { min-height: 52px; }
     .chip.done { background: var(--chip); border-style: dashed; }
+    .kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .kpi { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; background: var(--bg); }
+    .kpi > span { font-size: 12px; color: var(--muted); font-weight: 700; }
+    .kpi > b { font-family: var(--font-score); font-size: 30px; line-height: 1.05; font-variant-numeric: tabular-nums; }
+    .kpi > small { font-size: 12px; line-height: 1.4; color: var(--muted); }
+    .kpi > small.good { color: var(--score-text); font-weight: 700; }
+    .kpi > small.bad { color: var(--loss-text); font-weight: 700; }
+    .vs-line { display: flex; align-items: center; gap: 8px; font-size: 13px; flex-wrap: wrap; }
+    .vs-line b { font-weight: 800; }
+    .chart-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .chart-scroll svg { display: block; min-width: 100%; height: auto; }
+    .chart-legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 13px; font-weight: 700; }
+    .chart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .chart-legend svg { flex: 0 0 auto; }
+    .chart-tip { min-height: 2.6em; font-size: 13px; line-height: 1.5; padding: 6px 10px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
+    .rtable th button { border: none; background: transparent; font: inherit; color: inherit; padding: 0; min-height: 28px; white-space: nowrap; }
+    .rtable th button.on { color: var(--ink); text-decoration: underline; }
+    .rtable td button { border: none; background: transparent; font: inherit; color: inherit; padding: 4px 0; text-align: left; min-height: 32px; }
     .def-row { padding-block: 8px; border-top: 1px solid var(--line); }
     .def-row:first-child { border-top: none; }
     .def-row b { display: block; font-size: 14px; }
@@ -497,6 +515,17 @@
         </div>
     </div>
     <div class="page" id="reviewPage"></div>
+</div>
+
+<!-- ============ 球員生涯 ============ -->
+<div id="careerView" class="view">
+    <div class="pv-bar">
+        <div class="pv-bar-inner gutter">
+            <button class="pv-btn" data-action="career-back">← 返回</button>
+            <span class="pv-title" id="crTitle"></span>
+        </div>
+    </div>
+    <div class="page" id="careerPage"></div>
 </div>
 
 <!-- ============ 圖片（長按儲存） ============ -->
@@ -1416,6 +1445,96 @@ function restoreConflict(db, cid) {
     return true;
 }
 
+/* ===== 跨場分析（P6） ===== */
+function matchHasRallies(m) { return m.sets.some(st => st.log.some(e => e.k === 'ev' && e.out !== 'cont')); }
+function matchHasReview(m) { return Object.values(m.review || {}).some(r => r && r.reviewed); }
+// 篩選：teamName（A隊／B隊，跨賽季）、seasonId、event、from／to（日期）、reviewedOnly；回傳依日期由舊到新
+function filterMatches(db, f) {
+    const q = f || {};
+    return Object.values(db.matches).filter(m => {
+        if (!matchHasRallies(m)) return false;
+        const t = db.teams[m.teamId];
+        if (q.teamName && (!t || t.name !== q.teamName)) return false;
+        if (q.seasonId && (!t || t.seasonId !== q.seasonId)) return false;
+        if (q.event && m.event !== q.event) return false;
+        if (q.from && String(m.date) < q.from) return false;
+        if (q.to && String(m.date) > q.to) return false;
+        if (q.reviewedOnly && !matchHasReview(m)) return false;
+        return true;
+    }).sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.createdAt - b.createdAt);
+}
+// 我方失誤 = 歸給我方的失分（不含對手好球、待確認）
+function errorsOf(team) { return team.loss - (team.losses['對手好球'] || 0) - (team.losses['待確認'] || 0); }
+function round1(x) { return Math.round(x * 10) / 10; }
+function matchBrief(m, sum) { return { id: m.id, date: m.date, opponent: m.opponent, teamId: m.teamId, setsUs: sum.us, setsThem: sum.them, result: sum.done ? (sum.winner === 'us' ? '勝' : '敗') : null }; }
+// 多場累計：戰績、全隊、每位球員（同一個球員 ID 跨隊伍自動合併）、每場一點的趨勢
+function computeAggregate(db, matches) {
+    const team = blankStat(null);
+    team.points = {}; team.losses = {};
+    const players = {}, perMatch = [], record = { w: 0, l: 0, open: 0 };
+    let setsUs = 0, setsThem = 0, ptsUs = 0, ptsThem = 0, noteHighMatches = 0, reviewedMatches = 0;
+    matches.forEach(m => {
+        const ms = computeMatchStats(m, db), sum = matchSummary(m);
+        addStat(team, ms.team);
+        ['points', 'losses'].forEach(k => Object.keys(ms.team[k]).forEach(c => { team[k][c] = (team[k][c] || 0) + ms.team[k][c]; }));
+        if (sum.done) { if (sum.winner === 'us') record.w++; else record.l++; } else record.open++;
+        setsUs += sum.us; setsThem += sum.them;
+        sum.sets.forEach(x => { ptsUs += x.score.us; ptsThem += x.score.them; });
+        if (ms.team.attack.noteHigh) noteHighMatches++;
+        if (matchHasReview(m)) reviewedMatches++;
+        const ids = Object.keys(ms.players);
+        matchParticipants(m).forEach(pid => { if (ids.indexOf(pid) === -1) ids.push(pid); });
+        ids.forEach(pid => {
+            if (!players[pid]) players[pid] = { pid, games: 0, stat: blankStat(pid), teamIds: [] };
+            const e = players[pid];
+            e.games++;
+            addStat(e.stat, ms.players[pid] || finalizeStat(blankStat(pid)));
+            if (e.teamIds.indexOf(m.teamId) === -1) e.teamIds.push(m.teamId);
+        });
+        perMatch.push(Object.assign(matchBrief(m, sum), { attackPt: ms.team.attack.pt, errors: errorsOf(ms.team), sets: sum.sets.filter(x => x.started).length }));
+    });
+    finalizeStat(team);
+    const list = Object.values(players);
+    list.forEach(e => finalizeStat(e.stat));
+    return { n: matches.length, record, setsUs, setsThem, ptsUs, ptsThem, team, players: list, perMatch, noteHighMatches, reviewedMatches };
+}
+// 累計個人表排序：h 是欄位名稱、'games' 或 'name'；沒有資料（null）一律排最後
+function sortAggPlayers(list, h, dir, nameOf) {
+    const col = STAT_COLUMNS.find(c => c.h === h);
+    const val = e => h === 'games' ? e.games : col ? col.get(e.stat) : 0;
+    const sgn = dir === 'asc' ? 1 : -1;
+    return list.slice().sort((a, b) => {
+        if (h === 'name') return sgn * String(nameOf(a.pid)).localeCompare(String(nameOf(b.pid)), 'zh-Hant');
+        const x = val(a), y = val(b);
+        if (x == null && y == null) return 0;
+        if (x == null) return 1;
+        if (y == null) return -1;
+        return sgn * (x - y) || (b.stat.pts - a.stat.pts);
+    });
+}
+// 最近一場 vs 上一場：數字、每局平均、與上一場每局平均的差
+function compareLatest(db, matches) {
+    if (!matches.length) return null;
+    const pack = m => { const sum = matchSummary(m), ms = computeMatchStats(m, db); return { m, sum, ms, n: Math.max(1, sum.sets.filter(x => x.started).length) }; };
+    const A = pack(matches[matches.length - 1]), B = matches.length > 1 ? pack(matches[matches.length - 2]) : null;
+    const defs = [
+        ['攻擊得分', x => x.ms.team.attack.pt], ['發球得分', x => x.ms.team.serve.pt], ['攔網得分', x => x.ms.team.block.pt],
+        ['對方失誤送分', x => x.ms.team.points['對方失誤'] || 0], ['我方失誤', x => errorsOf(x.ms.team)], ['最大連續失分', x => x.ms.runs.them.n, true]
+    ];
+    const metrics = defs.map(d => {
+        const v = d[1](A), pv = B ? d[1](B) : null;
+        if (d[2]) return { label: d[0], value: v, set: A.ms.runs.them.set, prev: pv, diff: B ? v - pv : null, streak: true };
+        const per = round1(v / A.n), pper = B ? round1(pv / B.n) : null;
+        return { label: d[0], value: v, per, prev: pv, prevPer: pper, diff: B ? round1(v / A.n - pv / B.n) : null };
+    });
+    return { cur: matchBrief(A.m, A.sum), prev: B ? matchBrief(B.m, B.sum) : null, metrics };
+}
+function distinctEvents(db) {
+    const out = [];
+    Object.values(db.matches).forEach(m => { if (m.event && out.indexOf(m.event) === -1) out.push(m.event); });
+    return out.sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+}
+
 /* ===== 覆盤（P5）：覆盤資料另外存在 match.review，不改動 log ===== */
 const DIG_TYPES = [['spike', '接扣'], ['tip', '接吊'], ['cover', 'Cover'], ['free', '接嗆司']];
 const RECEIVE_GRADES = [['good', '到位'], ['poor', '不到位'], ['err', '失誤']];
@@ -2014,6 +2133,71 @@ function runSelfTests() {
         eq([r2.created, r2.merged], [1, 0]); eq(Object.keys(db.players).length, 3);
     });
 
+    // ---- P6：跨場分析與球員生涯 ----
+    const p6db = () => {
+        const db = newDb();
+        const s1 = addSeasonTo(db, { name: '114-1', startDate: '2025-09-01' }), s2 = addSeasonTo(db, { name: '114-2', startDate: '2026-02-01' });
+        const [A1, B1] = teamsOfSeason(db, s1.id), [A2] = teamsOfSeason(db, s2.id);
+        const mk = (team, date, opp, ev, f) => { const m = newMatch({ teamId: team.id, opponent: opp, event: ev, date, formatKey: 'bo3' }); m.roster = ['X', 'Y', 'Z'].map(id => ({ playerId: id, name: id, number: '', positions: [] })); f(m); db.matches[m.id] = m; return m; };
+        const win = (m, si) => { for (let i = 0; i < 25; i++) m.sets[si].log.push(E('team', 'opp_err')); };
+        const lose = (m, si) => { for (let i = 0; i < 25; i++) m.sets[si].log.push(E('team', 'opp_pt')); };
+        // Y 先在 B 隊、後來升到 A 隊
+        const m1 = mk(B1, '2025-10-01', '甲', '系際盃', m => { m.sets[0].log.push(E('attack', 'pt', 'Y', 'spike'), E('attack', 'pt', 'Y', 'spike'), E('attack', 'err', 'Y', 'spike')); win(m, 0); win(m, 1); });
+        const m2 = mk(A1, '2025-11-01', '乙', '', m => { m.sets[0].log.push(E('attack', 'pt', 'Y', 'spike'), E('attack', 'cont', 'Y', 'spike'), E('block', 'pt', 'Z'), E('serve', 'err', 'X')); lose(m, 0); win(m, 1); lose(m, 2); });
+        const m3 = mk(A2, '2026-03-01', '丙', '系際盃', m => { m.sets[0].log.push(E('attack', 'pt', 'Y', 'spike'), E('attack', 'pt', 'Z', 'spike')); win(m, 0); win(m, 1); });
+        m3.review['x'] = { reviewed: true };
+        return { db, s1, s2, A1, B1, A2, m1, m2, m3 };
+    };
+    T('跨場累計：同一位球員在 B、A 兩隊的比賽合併計算', () => {
+        const { db } = p6db();
+        const agg = computeAggregate(db, filterMatches(db, null));
+        eq([agg.n, agg.record, agg.setsUs, agg.setsThem], [3, { w: 2, l: 1, open: 0 }, 5, 2], '戰績與局數');
+        const y = agg.players.find(e => e.pid === 'Y');
+        eq([y.games, y.stat.attack.pt, y.stat.attack.err, y.stat.attack.dug, y.stat.attack.total], [3, 4, 1, 1, 6], 'Y 累計（含 B 隊那場）');
+        eq(y.teamIds.length, 3, '標示每場是哪一隊');
+        eq(agg.team.attack.pt, 5); eq(agg.team.points['對方失誤'], 125, '各場得分來源加總');
+        eq(agg.perMatch.map(r => [r.attackPt, r.errors]), [[2, 1], [1, 1], [2, 0]]);
+        eq(agg.noteHighMatches, 2, '兩場沒記被守起 → 成功率偏高');
+    });
+    T('跨場篩選：A 隊只出現 A 隊比賽（跨賽季）、賽季、賽事、日期、只算有覆盤', () => {
+        const { db, s1, A1 } = p6db();
+        const opp = f => filterMatches(db, f).map(m => m.opponent);
+        eq(opp(null), ['甲', '乙', '丙']); eq(opp({ teamName: 'A隊' }), ['乙', '丙']); eq(opp({ teamName: 'B隊' }), ['甲']);
+        eq(opp({ seasonId: s1.id }), ['甲', '乙']); eq(opp({ event: '系際盃' }), ['甲', '丙']);
+        eq(opp({ from: '2025-10-15', to: '2026-01-01' }), ['乙']); eq(opp({ reviewedOnly: true }), ['丙']);
+        eq(opp({ teamName: 'A隊', event: '系際盃' }), ['丙'], '條件可以疊加');
+        const e = db.matches[Object.keys(db.matches)[0]]; e.sets.forEach(x => { x.log = []; });
+        eq(filterMatches(db, null).length, 2, '完全沒紀錄的比賽不算');
+        eq(distinctEvents(db), ['系際盃']);
+    });
+    T('累計個人表排序：欄位、升降冪、沒資料排最後', () => {
+        const { db } = p6db();
+        const agg = computeAggregate(db, filterMatches(db, null)), nm = id => id;
+        eq(sortAggPlayers(agg.players, '得分', 'desc', nm).map(e => e.pid)[0], 'Y');
+        eq(sortAggPlayers(agg.players, '攻擊成功率', 'desc', nm).map(e => e.pid).slice(-1), ['X'], 'X 沒攻擊 → 排最後');
+        eq(sortAggPlayers(agg.players, '攻擊成功率', 'asc', nm).map(e => e.pid).slice(-1), ['X'], '升冪也排最後');
+        eq(sortAggPlayers(agg.players, 'name', 'asc', nm).map(e => e.pid), ['X', 'Y', 'Z']);
+        eq(sortAggPlayers(agg.players, 'games', 'desc', nm).length, 3);
+    });
+    T('最近一場 vs 上一場：數字、每局平均、差值', () => {
+        const { db } = p6db();
+        const c = compareLatest(db, filterMatches(db, null));
+        eq([c.cur.opponent, c.prev.opponent, c.cur.result, c.prev.result], ['丙', '乙', '勝', '敗']);
+        const atk = c.metrics.find(x => x.label === '攻擊得分');
+        eq([atk.value, atk.per, atk.prev, atk.prevPer, atk.diff], [2, 1, 1, 0.3, 0.7], '攻擊得分：這場 2 分打兩局（每局 1.0）、上一場 1 分打三局（每局 0.3），差用未四捨五入的平均算');
+        const run = c.metrics.find(x => x.streak);
+        eq([run.value, run.prev, run.diff], [0, 26, -26], '最大連續失分（上一場：發球失誤 + 25 個對手好球）');
+        eq(compareLatest(db, filterMatches(db, { teamName: 'B隊' })).prev, null, '只有一場就沒有上一場');
+        eq(compareLatest(db, []), null);
+    });
+    T('球員生涯：出賽場數、總得分、平均、每場明細跨隊', () => {
+        const { db, A1, B1, A2 } = p6db();
+        const ps = computePlayerStats('Y', filterMatches(db, null), db);
+        eq([ps.games, ps.total.pts, ps.total.loss, ps.total.net], [3, 4, 1, 3]);
+        eq(ps.rows.map(r => r.teamId), [B1.id, A1.id, A2.id], '每場一列、標示當時的隊伍');
+        eq(computePlayerStats('nobody', filterMatches(db, null), db).games, 0);
+    });
+
     // ---- P5：逐球覆盤 ----
     T('覆盤佇列：待確認排最前，補完原因後回到時間順序；進度；範圍篩選', () => {
         const m = newMatch({ formatKey: 'bo3' }); m.sets[0].firstServe = 'them';
@@ -2539,6 +2723,7 @@ function viewHome() {
             <button class="btn-solid brand" data-action="resume-match" data-id="${esc(m.id)}">繼續紀錄</button></div>`;
     });
     h += `<button class="btn-solid brand btn-start" data-action="new-match">開新比賽</button>`;
+    h += compareCardHtml(filterMatches(DB, null));
     h += `<div class="card"><h2>備份與匯入</h2>
         <div class="note">上次匯出：${esc(daysAgoText(DB.lastBackupAt))}。資料只存在這支手機上，記得定期匯出；匯出的紀錄檔可以在別的裝置匯入後接著用。</div>
         <button class="btn-solid" data-action="export-all">匯出紀錄檔</button>
@@ -2570,7 +2755,7 @@ function renderTabs() {
     page.scrollTop = keep;
     document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === ui.tab));
 }
-let RENDERERS = { live: () => {}, preview: () => {}, report: () => {}, review: () => {} };
+let RENDERERS = { live: () => {}, preview: () => {}, report: () => {}, review: () => {}, career: () => {} };
 function render() {
     const v = topView();
     document.querySelectorAll('.view').forEach(el => el.classList.toggle('active', el.id === v + 'View'));
@@ -2814,7 +2999,8 @@ SHEETS.player = d => {
             ${p ? `<div class="sub-label">所屬隊伍歷史</div>${hist.length ? hist.map(h => `<div>${esc(h.season ? h.season.name : '')} ${esc(h.team.name)}</div>`).join('') : '<div class="note">還沒有加入任何隊伍</div>'}
             <div class="note">${nMatches ? `有 ${nMatches} 場比賽紀錄，數據會跟著這位球員。不能刪除，不用時請把狀態改成「封存」，封存後不會出現在選單。` : '球員不會被刪除；不用時把狀態改成「封存」，封存後不會出現在選單。'}</div>` : ''}
             <div class="form-msg">${esc(d.msg || '')}</div>
-            <button class="btn-solid brand block" data-action="pf-save">${p ? '儲存' : '新增'}</button>`
+            <button class="btn-solid brand block" data-action="pf-save">${p ? '儲存' : '新增'}</button>
+            ${p ? `<button class="btn-solid ghost block" data-action="open-career" data-id="${esc(p.id)}">生涯數據</button>` : ''}`
     };
 };
 ACT['pf-pos'] = el => {
@@ -3539,18 +3725,189 @@ function teamNamesInHistory() {
     Object.values(DB.matches).forEach(m => { const t = DB.teams[m.teamId]; if (t && names.indexOf(t.name) === -1) names.push(t.name); });
     return names.sort((a, b) => a.localeCompare(b, 'zh-Hant'));
 }
-function viewStats() {
+function viewHistory() {
     const names = teamNamesInHistory(), cur = ui.stats.team;
     const list = matchHistory(DB, cur === 'all' ? null : { teamName: cur });
     const filter = names.length > 1 ? `<div class="chips">${chipsHtml([{ value: 'all', label: '全部' }].concat(names.map(n => ({ value: n, label: n }))), [cur], 'stats-team')}</div>` : '';
-    return `<div class="page-inner col gutter"><div class="page-title"><h1>數據</h1><p>比賽歷史；點進去看本場報告</p></div>${filter}
+    return `${filter}
         ${list.length ? `<div class="list">${list.map(r => `<button class="list-row" data-action="open-report" data-id="${esc(r.id)}"><span class="lr-main"><span class="lr-title">vs ${esc(r.opponent)}</span>
             <span class="lr-sub">${esc(r.date)}${r.event ? '・' + esc(r.event) : ''}・${esc(teamLabel(DB, r.teamId))}</span><span class="lr-sub">${r.sets.length ? esc(r.sets.join('　')) : '還沒有紀錄'}</span></span>
-            ${r.status === 'live' ? '<span class="tagx">進行中</span>' : (r.result ? `<span class="tagx ${r.result === '勝' ? 'win' : 'lose'}">${r.result}</span>` : '')}<span class="lr-num">${r.us}:${r.them}</span></button>`).join('')}</div>` : '<div class="empty">還沒有比賽。<br>到「紀錄」開一場新比賽。</div>'}</div>`;
+            ${r.status === 'live' ? '<span class="tagx">進行中</span>' : (r.result ? `<span class="tagx ${r.result === '勝' ? 'win' : 'lose'}">${r.result}</span>` : '')}<span class="lr-num">${r.us}:${r.them}</span></button>`).join('')}</div>` : '<div class="empty">還沒有比賽。<br>到「紀錄」開一場新比賽。</div>'}`;
+}
+ui.stats = { sub: 'history', team: 'all', f: { teamName: '', seasonId: '', event: '', from: '', to: '', reviewedOnly: false }, sort: { h: '得分', dir: 'desc' }, tip: null, table: false };
+function viewStats() {
+    const t = ui.stats;
+    return `<div class="page-inner col gutter"><div class="page-title"><h1>數據</h1><p>比賽歷史、跨場分析與球員生涯</p></div>
+        ${segHtml([{ value: 'history', label: '比賽歷史' }, { value: 'cross', label: '跨場分析' }], t.sub, 'stats-sub')}
+        ${t.sub === 'history' ? viewHistory() : viewCross()}</div>`;
 }
 TAB_VIEWS.stats = viewStats;
-ui.stats = { team: 'all' };
+ACT['stats-sub'] = el => { ui.stats.sub = el.dataset.v; ui.stats.tip = null; render(); };
 ACT['stats-team'] = el => { ui.stats.team = el.dataset.v; render(); };
+
+/* ===== 圖表（SVG）：單一座標軸、2px 線、≥8px 標記、淡色格線；點一下看數值，另有表格 ===== */
+function niceMax(v) {
+    const raw = Math.max(1, v) / 4, steps = [1, 2, 5, 10, 20, 50, 100, 200, 500];
+    return 4 * (steps.find(x => x >= raw) || Math.ceil(raw));
+}
+const mmdd = d => { const [, mo, da] = String(d).split('-'); return mo ? `${Number(mo)}/${Number(da)}` : String(d); };
+function chartFrame(n, max, W, H, M, labels, tipIdx) {
+    const step = max / 4, plotW = W - M.l - M.r, plotH = H - M.t - M.b;
+    const xAt = i => M.l + (n === 1 ? plotW / 2 : i * plotW / (n - 1));
+    const yAt = v => M.t + plotH * (1 - v / max);
+    let g = '';
+    for (let k = 0; k <= 4; k++) { const y = yAt(step * k); g += `<line x1="${M.l}" x2="${W - M.r}" y1="${y}" y2="${y}" stroke="var(--line)" stroke-width="1"/><text x="${M.l - 6}" y="${y + 3.5}" text-anchor="end" font-size="10" fill="var(--muted)">${step * k}</text>`; }
+    const every = Math.ceil(n / Math.max(1, Math.floor(plotW / 44)));
+    labels.forEach((lb, i) => { if (i % every === 0 || i === n - 1) g += `<text x="${xAt(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--muted)">${esc(lb)}</text>`; });
+    if (tipIdx !== null && tipIdx < n) g += `<line x1="${xAt(tipIdx)}" x2="${xAt(tipIdx)}" y1="${M.t}" y2="${M.t + plotH}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 3"/>`;
+    return { g, xAt, yAt, plotW, plotH };
+}
+function hitAreas(chart, n, W, M, H, name) {
+    const w = n === 1 ? W : chart.plotW / Math.max(1, n - 1);
+    return Array.from({ length: n }, (_, i) => `<rect x="${chart.xAt(i) - w / 2}" y="0" width="${w}" height="${H}" fill="transparent" data-action="chart-tip" data-chart="${name}" data-i="${i}"/>`).join('');
+}
+// series: [{ name, color, dash, shape:'circle'|'square', values }]
+function lineChartSvg(name, series, labels, tipIdx, aria) {
+    const n = labels.length, max = niceMax(Math.max(...series.map(s => Math.max(...s.values)))), H = 190, M = { t: 12, r: 64, b: 26, l: 30 };
+    const W = Math.max(280, n * 46 + M.l + M.r);
+    const c = chartFrame(n, max, W, H, M, labels, tipIdx);
+    let body = c.g, lastY = [];
+    series.forEach(s => {
+        const pts = s.values.map((v, i) => `${c.xAt(i)},${c.yAt(v)}`).join(' ');
+        body += `<polyline points="${pts}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"${s.dash ? ' stroke-dasharray="6 4"' : ''}/>`;
+        s.values.forEach((v, i) => { const x = c.xAt(i), y = c.yAt(v); body += s.shape === 'square' ? `<rect x="${x - 4.5}" y="${y - 4.5}" width="9" height="9" rx="1.5" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>` : `<circle cx="${x}" cy="${y}" r="4.5" fill="${s.color}" stroke="var(--surface)" stroke-width="2"/>`; });
+        let ly = c.yAt(s.values[n - 1]) + 4;
+        lastY.forEach(o => { if (Math.abs(ly - o) < 13) ly = o + 13; });
+        lastY.push(ly);
+        body += `<text x="${c.xAt(n - 1) + 9}" y="${ly}" font-size="11" font-weight="700" fill="var(--ink)">${esc(s.name)}</text>`;
+    });
+    return `<div class="chart-scroll"><svg viewBox="0 0 ${W} ${H}" style="width:${W}px" role="img" aria-label="${esc(aria)}">${body}${hitAreas(c, n, W, M, H, name)}</svg></div>`;
+}
+function barChartSvg(name, values, labels, color, tipIdx, aria) {
+    const n = labels.length, max = niceMax(Math.max(...values)), H = 190, M = { t: 18, r: 12, b: 26, l: 30 };
+    const W = Math.max(280, n * 40 + M.l + M.r);
+    const plotW = W - M.l - M.r, slot = plotW / n, bw = Math.min(26, slot * 0.6);
+    const c = chartFrame(n, max, W, H, M, labels, null);
+    let body = c.g.replace(/<text x="[\d.]+" y="[\d.]+" text-anchor="middle"[^>]*>[^<]*<\/text>/g, '');
+    const every = Math.ceil(n / Math.max(1, Math.floor(plotW / 40)));
+    const xc = i => M.l + slot * (i + 0.5);
+    labels.forEach((lb, i) => { if (i % every === 0 || i === n - 1) body += `<text x="${xc(i)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="var(--muted)">${esc(lb)}</text>`; });
+    values.forEach((v, i) => {
+        const x = xc(i) - bw / 2, y = c.yAt(v), h = Math.max(0, M.t + c.plotH - y), r = Math.min(4, h, bw / 2);
+        if (h > 0) body += `<path d="M${x},${y + h} V${y + r} Q${x},${y} ${x + r},${y} H${x + bw - r} Q${x + bw},${y} ${x + bw},${y + r} V${y + h} Z" fill="${color}" opacity="${tipIdx === null || tipIdx === i ? 1 : 0.55}"/>`;
+        body += `<text x="${xc(i)}" y="${y - 4}" text-anchor="middle" font-size="11" font-weight="700" fill="var(--ink)">${v}</text>`;
+        body += `<rect x="${xc(i) - slot / 2}" y="0" width="${slot}" height="${H}" fill="transparent" data-action="chart-tip" data-chart="${name}" data-i="${i}"/>`;
+    });
+    return `<div class="chart-scroll"><svg viewBox="0 0 ${W} ${H}" style="width:${W}px" role="img" aria-label="${esc(aria)}">${body}</svg></div>`;
+}
+ACT['chart-tip'] = el => { const k = el.dataset.chart, i = Number(el.dataset.i); ui.stats.tip = ui.stats.tip && ui.stats.tip.k === k && ui.stats.tip.i === i ? null : { k, i }; render(); };
+ACT['chart-table'] = () => { ui.stats.table = !ui.stats.table; render(); };
+const tipOf = k => (ui.stats.tip && ui.stats.tip.k === k ? ui.stats.tip.i : null);
+
+/* ===== 跨場分析 ===== */
+const SF_LABEL = { teamName: '隊伍', seasonId: '賽季', event: '賽事' };
+function crossFilterHtml(names) {
+    const f = ui.stats.f, seasons = seasonsSorted(DB), events = distinctEvents(DB);
+    return `<div class="card"><label>篩選</label>
+        ${names.length > 1 ? `<div class="chips">${chipsHtml([{ value: '', label: '全部隊伍' }].concat(names.map(n => ({ value: n, label: n }))), [f.teamName], 'sf-team')}</div>` : ''}
+        <div class="field-row"><div class="field"><span>賽季</span><select class="input-text" data-live="sf-set" data-k="seasonId"><option value="">全部</option>${seasons.map(x => `<option value="${esc(x.id)}"${f.seasonId === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
+        <div class="field"><span>賽事</span><select class="input-text" data-live="sf-set" data-k="event"><option value="">全部</option>${events.map(x => `<option value="${esc(x)}"${f.event === x ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></div></div>
+        <div class="field-row"><div class="field"><span>從</span><input type="date" class="input-text" data-live="sf-set" data-k="from" value="${esc(f.from)}"></div>
+        <div class="field"><span>到</span><input type="date" class="input-text" data-live="sf-set" data-k="to" value="${esc(f.to)}"></div></div>
+        <div class="chips"><button type="button" class="chip${f.reviewedOnly ? ' on' : ''}" data-action="sf-reviewed">只算有覆盤的比賽</button></div></div>`;
+}
+ACT['sf-team'] = el => { ui.stats.f.teamName = el.dataset.v; ui.stats.tip = null; render(); };
+ACT['sf-set'] = el => { ui.stats.f[el.dataset.k] = el.value; ui.stats.tip = null; render(); };
+ACT['sf-reviewed'] = () => { ui.stats.f.reviewedOnly = !ui.stats.f.reviewedOnly; ui.stats.tip = null; render(); };
+function compareCardHtml(list, title) {
+    const c = compareLatest(DB, list);
+    if (!c) return '';
+    const brief = (lb, b) => b ? `<div class="vs-line"><span class="note">${lb}</span><b>vs ${esc(b.opponent)}</b><span class="note">${esc(b.date)}・${esc(teamLabel(DB, b.teamId))}</span>${b.result ? `<span class="tagx ${b.result === '勝' ? 'win' : 'lose'}">${b.result} ${b.setsUs}:${b.setsThem}</span>` : '<span class="tagx">未分勝負</span>'}</div>` : '';
+    const worse = new Set(['我方失誤', '最大連續失分']);
+    const tile = m => {
+        let sub, cls = '';
+        if (m.streak) sub = (m.value ? `出現在第 ${m.set} 局` : '沒有連續失分') + (m.diff === null ? '' : m.diff === 0 ? '；與上一場相同' : `；比上一場${m.diff > 0 ? '多' : '少'} ${Math.abs(m.diff)}`);
+        else sub = `每局 ${m.per.toFixed(1)}` + (m.diff === null ? '' : m.diff === 0 ? '；與上一場每局相同' : `；比上一場每局${m.diff > 0 ? '多' : '少'} ${Math.abs(m.diff).toFixed(1)}`);
+        if (m.diff) cls = (m.diff > 0) === !worse.has(m.label) ? 'good' : 'bad';
+        return `<div class="kpi"><span>${esc(m.label)}</span><b>${m.value}</b><small class="${cls}">${esc(sub)}</small></div>`;
+    };
+    return `<div class="card"><h2>${title || '最近一場 vs 上一場'}</h2>${brief('這場', c.cur)}${brief('上一場', c.prev)}<div class="kpis">${c.metrics.map(tile).join('')}</div>
+        ${c.prev ? '' : '<div class="note">只有一場比賽，還沒有可以比較的上一場。</div>'}</div>`;
+}
+function viewCross() {
+    const names = teamNamesInHistory(), f = ui.stats.f;
+    const list = filterMatches(DB, { teamName: f.teamName, seasonId: f.seasonId, event: f.event, from: f.from, to: f.to, reviewedOnly: f.reviewedOnly });
+    let h = crossFilterHtml(names);
+    if (!list.length) return h + '<div class="empty">沒有符合條件的比賽。<br>放寬篩選，或先記一場比賽。</div>';
+    const agg = computeAggregate(DB, list), t = agg.team;
+    h += `<div class="card"><h2>戰績總覽 <span class="note">${agg.n} 場・${agg.perMatch.reduce((a, r) => a + r.sets, 0)} 局</span></h2>
+        <div class="kpis"><div class="kpi"><span>勝</span><b>${agg.record.w}</b></div><div class="kpi"><span>敗</span><b>${agg.record.l}</b></div>
+        <div class="kpi"><span>局數</span><b>${agg.setsUs} : ${agg.setsThem}</b></div><div class="kpi"><span>總得分／總失分</span><b>${agg.ptsUs} : ${agg.ptsThem}</b></div></div>
+        ${agg.record.open ? `<div class="note">另有 ${agg.record.open} 場沒有分出勝負（進行中或中途結束）。</div>` : ''}
+        <div class="vs-line"><span class="note">攻擊成功率</span><b>${fmtPct(t.attack.rate)}</b><span class="note">效率 ${fmtPct(t.attack.eff)}</span></div>
+        ${agg.noteHighMatches ? `<div class="banner-warn">其中 ${agg.noteHighMatches} 場沒有記被守起，攻擊成功率會偏高。</div>` : ''}</div>`;
+    h += compareCardHtml(list);
+    // 團隊趨勢
+    const labels = agg.perMatch.map(r => mmdd(r.date)), tip = tipOf('trend');
+    const atk = agg.perMatch.map(r => r.attackPt), err = agg.perMatch.map(r => r.errors);
+    h += `<div class="card"><h2>團隊趨勢 <button class="btn-solid ghost small" data-action="chart-table">${ui.stats.table ? '看圖' : '看表格'}</button></h2>
+        <div class="chart-legend"><span><svg width="22" height="10" aria-hidden="true"><line x1="0" x2="22" y1="5" y2="5" stroke="var(--score)" stroke-width="2"/><circle cx="11" cy="5" r="4" fill="var(--score)"/></svg>攻擊得分</span>
+        <span><svg width="22" height="10" aria-hidden="true"><line x1="0" x2="22" y1="5" y2="5" stroke="var(--loss)" stroke-width="2" stroke-dasharray="4 3"/><rect x="6.5" y="1" width="9" height="9" rx="1.5" fill="var(--loss)"/></svg>我方失誤</span></div>`;
+    if (ui.stats.table) h += `<div class="rtable-wrap"><table class="rtable"><thead><tr><th>日期</th><th>對手</th><th>攻擊得分</th><th>我方失誤</th></tr></thead><tbody>${agg.perMatch.map(r => `<tr><td>${esc(mmdd(r.date))}</td><td>${esc(r.opponent)}</td><td>${r.attackPt}</td><td>${r.errors}</td></tr>`).join('')}</tbody></table></div>`;
+    else {
+        h += lineChartSvg('trend', [{ name: '攻擊得分', color: 'var(--score)', shape: 'circle', values: atk }, { name: '失誤', color: 'var(--loss)', dash: true, shape: 'square', values: err }], labels, tip, `每場攻擊得分與我方失誤，共 ${agg.n} 場`);
+        h += `<div class="chart-tip">${tip === null ? '點一下圖上的位置，看那一場的數字。' : `${esc(agg.perMatch[tip].date)} vs ${esc(agg.perMatch[tip].opponent)}：攻擊得分 ${atk[tip]}，我方失誤 ${err[tip]}`}</div>`;
+    }
+    h += '<div class="note">失誤 = 歸給我方球員的失分（不含對手好球與待確認）。只有一場時圖上是單一個點。</div></div>';
+    // 累計個人表
+    const cols = STAT_COLUMNS.filter(c => c.t), sort = ui.stats.sort;
+    const rows = sortAggPlayers(agg.players, sort.h, sort.dir, id => rvNameAny(id));
+    const th = (hKey, label) => `<th><button data-action="agg-sort" data-h="${esc(hKey)}" class="${sort.h === hKey ? 'on' : ''}">${esc(label)}${sort.h === hKey ? (sort.dir === 'desc' ? '▼' : '▲') : ''}</button></th>`;
+    h += `<div class="card"><h2>所有場次累計（${agg.n} 場）</h2><div class="rtable-wrap"><table class="rtable"><thead><tr>${th('name', '球員')}${th('games', '場')}${cols.map(c => th(c.h, c.h)).join('')}</tr></thead><tbody>
+        ${rows.map(e => `<tr><td><button data-action="open-career" data-id="${esc(e.pid)}">${esc(rvNameAny(e.pid))}</button></td><td>${e.games}</td>${cols.map(c => `<td>${esc(fmtStatCell(c, e.stat))}</td>`).join('')}</tr>`).join('')}
+        <tr class="team"><td>全隊</td><td>${agg.n}</td>${cols.map(c => `<td>${esc(fmtStatCell(c, t))}</td>`).join('')}</tr></tbody></table></div>
+        <div class="note">點欄位名稱排序，點球員名字看生涯。同一位球員在 A、B 隊的比賽會合併計算。左右滑動看完整欄位。</div></div>`;
+    return h;
+}
+ACT['agg-sort'] = el => { const s = ui.stats.sort; if (s.h === el.dataset.h) s.dir = s.dir === 'desc' ? 'asc' : 'desc'; else { s.h = el.dataset.h; s.dir = el.dataset.h === 'name' ? 'asc' : 'desc'; } render(); };
+function rvNameAny(pid) {
+    const p = DB.players[pid];
+    if (p) return p.name;
+    for (const m of Object.values(DB.matches)) { const r = m.roster.find(x => x.playerId === pid); if (r) return r.name; }
+    return '?';
+}
+
+/* ===== 球員生涯 ===== */
+ui.career = null;
+function openCareer(pid) { closeSheet(); ui.career = { pid }; ui.stats.tip = null; pushView('career'); }
+ACT['open-career'] = el => openCareer(el.dataset.id);
+ACT['career-back'] = () => backView();
+function renderCareer() {
+    const pid = ui.career.pid, p = DB.players[pid];
+    const page = $('#careerPage');
+    $('#crTitle').textContent = `球員生涯・${rvNameAny(pid)}`;
+    const list = filterMatches(DB, null), ps = computePlayerStats(pid, list, DB), t = ps.total;
+    const keep = renderCareer.last === pid ? page.scrollTop : 0;
+    renderCareer.last = pid;
+    let h = `<div class="page-inner col gutter"><div class="card"><div class="rp-top"><div><div class="card-label">${p ? `${esc(p.number ? '#' + p.number + ' ' : '')}${esc(p.name)}` : esc(rvNameAny(pid))}</div>
+        <div class="note">${p ? esc(playerSubline(p)) : '（球員資料已不在這台裝置上）'}</div></div>${p && p.status !== 'active' ? `<span class="tagx">${PLAYER_STATUS[p.status]}</span>` : ''}</div></div>`;
+    if (!ps.games) { page.innerHTML = h + '<div class="empty">還沒有出賽紀錄。</div></div>'; page.scrollTop = keep; return; }
+    const avg = round1(t.pts / ps.games), a = t.attack;
+    h += `<div class="card"><h2>生涯累計</h2><div class="kpis">
+        <div class="kpi"><span>出賽場數</span><b>${ps.games}</b></div><div class="kpi"><span>總得分</span><b>${t.pts}</b><small>平均每場 ${avg.toFixed(1)}</small></div>
+        <div class="kpi"><span>攻擊成功率</span><b>${fmtPct(a.rate)}</b><small>${a.pt} 得分／${a.total} 次</small></div><div class="kpi"><span>失分</span><b>${t.loss}</b><small>淨值 ${t.net > 0 ? '+' : ''}${t.net}</small></div></div>
+        ${a.total && !a.dug && !ps.rows.some(r => r.stat.attack.dug) ? '<div class="banner-warn">沒有任何被守起紀錄，攻擊成功率會偏高。</div>' : ''}</div>`;
+    const labels = ps.rows.map(r => mmdd(r.date)), vals = ps.rows.map(r => r.stat.pts), tip = tipOf('career');
+    h += `<div class="card"><h2>每場總得分 <button class="btn-solid ghost small" data-action="chart-table">${ui.stats.table ? '看圖' : '看表格'}</button></h2>`;
+    if (ui.stats.table) h += `<div class="rtable-wrap"><table class="rtable"><thead><tr><th>日期</th><th>對手</th><th>總得分</th></tr></thead><tbody>${ps.rows.map(r => `<tr><td>${esc(mmdd(r.date))}</td><td>${esc(r.opponent)}</td><td>${r.stat.pts}</td></tr>`).join('')}</tbody></table></div>`;
+    else h += barChartSvg('career', vals, labels, 'var(--score)', tip, `每場總得分，共 ${ps.games} 場`) + `<div class="chart-tip">${tip === null ? '點一下長條，看那一場的對手與數字。' : `${esc(ps.rows[tip].date)} vs ${esc(ps.rows[tip].opponent)}（${esc(teamLabel(DB, ps.rows[tip].teamId))}）：總得分 ${vals[tip]}`}</div>`;
+    h += '</div>';
+    h += `<div class="card"><h2>每場明細</h2><div class="list">${ps.rows.slice().reverse().map(r => `<button class="list-row" data-action="open-report" data-id="${esc(r.matchId)}"><span class="lr-main"><span class="lr-title">vs ${esc(r.opponent)}</span><span class="lr-sub">${esc(r.date)}・${esc(teamLabel(DB, r.teamId))}</span><span class="lr-sub">得分 ${r.stat.pts}　失分 ${r.stat.loss}　攻擊成功率 ${fmtPct(r.stat.attack.rate)}</span></span><span class="lr-num">${r.stat.net > 0 ? '+' : ''}${r.stat.net}</span></button>`).join('')}</div>
+        <div class="note">不管球員當時在哪一隊，比賽都會合併計算；每場標示的是當時的隊伍。</div></div></div>`;
+    page.innerHTML = h;
+    page.scrollTop = keep;
+}
+RENDERERS.career = renderCareer;
 
 /* ===== VIEW_REPORT：本場報告 ===== */
 function openReport(id) {
