@@ -8,7 +8,7 @@
 | P4 比賽歷史與本場報告 | 完成 | 見下方「P4」 |
 | P5 逐球覆盤 | 完成 | 見下方「P5」 |
 | P6 跨場分析與球員生涯 | 完成 | 見下方「P6」 |
-| P7 部署與手機 | 完成（網址已發佈，等 iPhone 真機驗收） | 見下方「P7」；網址 https://kamikormt.github.io/ntuche-volley/ |
+| P7 部署與手機 | 完成（網址已發佈，使用者已用 iPhone 實測，沒有發現問題） | 見下方「P7」；網址 https://kamikormt.github.io/ntuche-volley/ |
 
 ## P1：基礎與資料
 
@@ -253,7 +253,7 @@
 **已發佈**
 
 1. **GitHub Pages 的網址**（ARCHITECTURE 第 11 節第 1 項）：使用者選了選項 A，把這個 repo 改成公開、Settings → Pages 的 Source 設成「GitHub Actions」；PR #1 合併後手動執行發佈流程成功，網址是 **https://kamikormt.github.io/ntuche-volley/**。我的執行環境連不到 github.io，所以沒有從我這邊打開過這個網址，內容是否正確要等使用者用手機確認。
-2. **iPhone 真機驗收**（加入主畫面、離線開啟、匯出紀錄檔到「檔案」、傳到 LINE、匯入）：網址已經有了，待使用者測試。
+2. **iPhone 真機驗收**（加入主畫面、離線開啟、匯出紀錄檔到「檔案」、傳到 LINE、匯入、P4～P6 的畫面）：使用者已在網址版上用 iPhone 實測，回報沒有發現問題（只有「沒有問題」的整體回報，沒有逐項紀錄）。
 
 **沒有實測的畫面項目（P7）**
 
