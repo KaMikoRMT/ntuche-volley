@@ -1222,6 +1222,7 @@ const STAT_DEFS = [
     { key: 'receiveRate', label: '接發到位率', formula: '到位 ÷（到位 ＋ 需要跑動 ＋ 壞球 ＋ 失誤）；只計已覆盤的球，賽中「接球失分」算失誤。舊版的「不到位」算在「需要跑動」', needs: '第 3 層（逐球覆盤）' },
     { key: 'digRate', label: '防守起球率', formula: '起球 ÷（起球 ＋ 沒起）；只計已覆盤的球，賽中「防守失分」算沒起', needs: '第 3 層' },
     { key: 'digGrade', label: '起球品質', formula: '起球之後再分到位／需要跑動／壞球（定義同接發）；起球到位率 = 到位 ÷ 有分級的起球', needs: '第 3 層' },
+    { key: 'setGrade', label: '舉球品質', formula: '覆盤時每一球舉球再評：到位 = 舉到攻擊手可以正常打的位置與高度；不到位 = 舉得到，但偏離（太近、太遠、太低、太慢），攻擊手要調整；失誤 = 直接失分（連擊、持球、舉飛）。舉球到位率 = 到位 ÷ 有評分的舉球。個人欄位算在「當時場上、且該局確認為舉球員」的人身上（場上剛好一位才算），隊伍欄位是全隊', needs: '第 3 層，且要記配球與評分' },
     { key: 'dist', label: '配球', formula: '覆盤時記「這一球舉給誰」。配給誰 = 被配球的球員；配給哪個位置 = 他「那一局」的位置（局開始前確認，有雙重位置的人以確認的為準）。百分比 = 該位置（或該球員）的配球數 ÷ 全部配球數', needs: '第 3 層，且要記配球' },
     { key: 'net', label: '個人得分／失分／淨值', formula: '歸給此人的得分數、失分數、相減', needs: '第 1 層' },
     { key: 'maxRun', label: '最大連續得分／失分', formula: '由每球的得分方序列算（不跨局）', needs: '第 1 層' }
@@ -1234,11 +1235,16 @@ function blankStat(pid) {
         block: { pt: 0, err: 0 },
         receive: { good: 0, run: 0, bad: 0, err: 0, total: 0, rate: null },
         dig: { ok: 0, no: 0, good: 0, run: 0, bad: 0, total: 0, rate: null, goodRate: null },
+        setQ: { good: 0, bad: 0, err: 0, total: 0, rate: null },   // 這位球員「舉出去」的球的品質（舉球員；隊伍欄位是全隊）
         setTo: 0
     };
 }
 // 接發的等級：到位／需要跑動／壞球／失誤（直接失分）。舊版的「不到位」（poor）視為「需要跑動」
 function normGrade(g) { return g === 'good' ? 'good' : g === 'run' || g === 'poor' ? 'run' : g === 'bad' ? 'bad' : 'err'; }
+// 舉球品質：到位／不到位／失誤（直接失分）；沒評的是 ''
+function normSetQ(q) { return q === 'good' || q === 'bad' || q === 'err' ? q : ''; }
+// 配球紀錄：舊版只存球員 ID（字串），新版是 { p, q }
+function setEntry(x) { return typeof x === 'string' ? { p: x, q: '' } : { p: x.p, q: normSetQ(x.q) }; }
 function normQuality(q) { return q === 'good' || q === 'run' || q === 'bad' ? q : ''; }
 function finalizeStat(s) {
     s.net = s.pts - s.loss;
@@ -1255,6 +1261,8 @@ function finalizeStat(s) {
     s.dig.rate = s.dig.total ? s.dig.ok / s.dig.total : null;
     const rated = s.dig.good + s.dig.run + s.dig.bad;
     s.dig.goodRate = rated ? s.dig.good / rated : null;
+    s.setQ.total = s.setQ.good + s.setQ.bad + s.setQ.err;
+    s.setQ.rate = s.setQ.total ? s.setQ.good / s.setQ.total : null;
     return s;
 }
 function addStat(a, b) {
@@ -1264,15 +1272,21 @@ function addStat(a, b) {
     if (b.serve.total !== null) a.serve.total = (a.serve.total || 0) + b.serve.total;
     ['good', 'run', 'bad', 'err'].forEach(k => { a.receive[k] += b.receive[k]; });
     ['ok', 'no', 'good', 'run', 'bad'].forEach(k => { a.dig[k] += b.dig[k]; });
+    ['good', 'bad', 'err'].forEach(k => { a.setQ[k] += b.setQ ? b.setQ[k] : 0; });
     a.setTo += b.setTo || 0;
     return a;
 }
 // 配球分佈：依位置、依球員（被配球的人）
-function blankDist() { return { total: 0, byPos: {}, byPlayer: {}, byPlayerPos: {} }; }
+function blankDist() { return { total: 0, byPos: {}, byPlayer: {}, byPlayerPos: {}, q: { good: 0, bad: 0, err: 0 }, byPlayerQ: {} }; }
 function addDist(a, b) {
     a.total += b.total;
     Object.keys(b.byPos).forEach(k => { a.byPos[k] = (a.byPos[k] || 0) + b.byPos[k]; });
     Object.keys(b.byPlayer).forEach(k => { a.byPlayer[k] = (a.byPlayer[k] || 0) + b.byPlayer[k]; });
+    ['good', 'bad', 'err'].forEach(k => { a.q[k] += b.q ? b.q[k] : 0; });
+    Object.keys(b.byPlayerQ || {}).forEach(pid => {
+        const t = a.byPlayerQ[pid] || (a.byPlayerQ[pid] = { good: 0, bad: 0, err: 0 });
+        ['good', 'bad', 'err'].forEach(k => { t[k] += b.byPlayerQ[pid][k]; });
+    });
     Object.keys(b.byPlayerPos).forEach(pid => {
         const t = a.byPlayerPos[pid] || (a.byPlayerPos[pid] = {});
         Object.keys(b.byPlayerPos[pid]).forEach(k => { t[k] = (t[k] || 0) + b.byPlayerPos[pid][k]; });
@@ -1299,6 +1313,13 @@ function defaultSetPositions(match, db, setIdx) {
 }
 function addCount(obj, key) { obj[key] = (obj[key] || 0) + 1; }
 
+// 這一球是誰在舉球：場上、且「那一局」確認的位置是舉球員（S）的人；剛好一位才算，否則不歸給個人
+function setterOf(match, setIdx, rallyId, db) {
+    const lu = lineupBefore(match, setIdx, rallyId);
+    if (!lu) return null;
+    const c = lu.onCourt.filter(pid => positionOf(match, setIdx, pid, db) === 'S');
+    return c.length === 1 ? c[0] : null;
+}
 // 一場（或其中一局）的完整統計。opts.setIdx = 只算那一局
 function computeMatchStats(match, db, opts) {
     const only = opts && typeof opts.setIdx === 'number' ? opts.setIdx : null;
@@ -1377,8 +1398,15 @@ function computeMatchStats(match, db, opts) {
                     if (q) { P(d.p).dig[q]++; team.dig[q]++; }
                 });
                 // 配球：這一球舉給誰（被配球的人），位置用「那一局」確認的位置
-                (rv.setTo || []).forEach(pid => {
+                const setter = (rv.setTo || []).length ? setterOf(match, i, r.id, db) : null;
+                (rv.setTo || []).forEach(raw => {
+                    const { p: pid, q } = setEntry(raw);
                     const pos = positionOf(match, i, pid, db);
+                    if (q) {
+                        dist.q[q]++; team.setQ[q]++;
+                        (dist.byPlayerQ[pid] || (dist.byPlayerQ[pid] = { good: 0, bad: 0, err: 0 }))[q]++;
+                        if (setter) P(setter).setQ[q]++;
+                    }
                     dist.total++; dist.byPos[pos] = (dist.byPos[pos] || 0) + 1; dist.byPlayer[pid] = (dist.byPlayer[pid] || 0) + 1;
                     const pp = dist.byPlayerPos[pid] || (dist.byPlayerPos[pid] = {}); pp[pos] = (pp[pos] || 0) + 1;
                     P(pid).setTo++; team.setTo++;
@@ -1643,6 +1671,7 @@ function distinctEvents(db) {
 //   失誤（只有接發）：直接失分，或球出界、沒有接到
 const QUALITY_LEVELS = [['good', '到位'], ['run', '需要跑動'], ['bad', '壞球']];
 const RECEIVE_GRADES = QUALITY_LEVELS.concat([['err', '失誤']]);
+const SET_GRADES = [['good', '到位'], ['bad', '不到位'], ['err', '失誤']];
 const DIG_TYPES = [['spike', '接扣'], ['tip', '接吊'], ['cover', 'Cover'], ['free', '接嗆司']];   // 舊版覆盤的起球類型（新版改記品質，舊資料仍會顯示）
 // 配球「位置」的類別與順序；沒設定位置的歸在 ''
 const DIST_POSITIONS = ['OH', 'MB', 'OPP', 'S', ''];
@@ -1699,8 +1728,8 @@ function reviewEntryOf(match, rid) {
 function reviewSetReceive(match, rid, p, grade) { reviewEntryOf(match, rid).receive = p ? { p, grade: normGrade(grade) } : null; }
 // 防守：ok = 起球；起球可以再給品質 q（到位／需要跑動／壞球），沒起不用
 function reviewAddDig(match, rid, p, ok, q) { reviewEntryOf(match, rid).digs.push({ p, ok: !!ok, q: ok ? normQuality(q) : '' }); }
-// 配球：這一球舉給誰（可多次，例如同一球連續兩次進攻）
-function reviewAddSetTo(match, rid, p) { const e = reviewEntryOf(match, rid); if (!Array.isArray(e.setTo)) e.setTo = []; e.setTo.push(p); }
+// 配球：這一球舉給誰（可多次，例如同一球連續兩次進攻），再評這一球舉得如何（到位／不到位／失誤）
+function reviewAddSetTo(match, rid, p, q) { const e = reviewEntryOf(match, rid); if (!Array.isArray(e.setTo)) e.setTo = []; e.setTo.push({ p, q: normSetQ(q) }); }
 function reviewRemoveSetTo(match, rid, i) { const e = reviewEntryOf(match, rid); if (Array.isArray(e.setTo)) e.setTo.splice(i, 1); }
 function reviewRemoveDig(match, rid, i) { reviewEntryOf(match, rid).digs.splice(i, 1); }
 function reviewAddDug(match, rid, p) { reviewEntryOf(match, rid).attacksDug.push(p); }
@@ -1744,7 +1773,11 @@ const STAT_COLUMNS = [
     { h: '起球壞球', get: s => s.dig.bad },
     { h: '防守沒起', get: s => s.dig.no },
     { h: '防守起球率', t: true, pct: true, get: s => s.dig.rate },
-    { h: '被配球數', get: s => s.setTo }
+    { h: '被配球數', get: s => s.setTo },
+    { h: '舉球到位', get: s => s.setQ.good },
+    { h: '舉球不到位', get: s => s.setQ.bad },
+    { h: '舉球失誤', get: s => s.setQ.err },
+    { h: '舉球到位率', pct: true, get: s => s.setQ.rate }
 ];
 function fmtStatCell(col, s) {
     const v = col.get(s);
@@ -2417,6 +2450,26 @@ function runSelfTests() {
         const agg = computeAggregate(db, [m, m]);
         eq([agg.dist.total, agg.dist.byPos.OH, agg.team.setTo], [8, 2, 8], '跨場累計');
         eq(distPosLabel('OH'), '大砲'); eq(distPosLabel(''), '未設定位置');
+    });
+    T('舉球品質：到位／不到位／失誤；舊的配球紀錄（只有球員 ID）照常算；個人欄位只算場上的舉球員', () => {
+        const m = fixtureMatch();
+        m.sets[0].positions = { X: 'S', Y: 'OH', Z: 'MB', A: 'OPP', B: 'OH', C: 'MB' };
+        const rl = replaySet(m.sets[0], m).rallies.map(r => r.id);
+        reviewAddSetTo(m, rl[0], 'Y', 'good'); reviewAddSetTo(m, rl[1], 'Y', 'bad'); reviewAddSetTo(m, rl[1], 'Z', 'err'); reviewAddSetTo(m, rl[2], 'Z', 'good');
+        reviewAddSetTo(m, rl[3], 'A', 'zzz');                       // 不認得的評分 → 當成沒評
+        m.review[rl[4]] = { reviewed: true, digs: [], setTo: ['Y'] };  // 舊格式
+        const s = computeMatchStats(m, null);
+        eq([s.team.setQ.good, s.team.setQ.bad, s.team.setQ.err, s.team.setQ.total], [2, 1, 1, 4], '全隊舉球品質');
+        eq(s.team.setQ.rate, 0.5);
+        eq(s.team.setTo, 6, '被配球數含沒評分的與舊格式');
+        eq(s.dist.q, { good: 2, bad: 1, err: 1 }); eq(s.dist.byPlayerQ.Y, { good: 1, bad: 1, err: 0 }, '配給 Y 的品質');
+        eq(s.dist.byPlayer.Y, 3, '舊格式也算配給誰');
+        eq([s.players.X.setQ.good, s.players.X.setQ.total, s.players.Y.setQ.total], [2, 4, 0], '場上只有 X 是舉球員 → 算在 X');
+        m.sets[0].positions.Y = 'S';
+        eq(computeMatchStats(m, null).players.X.setQ.total, 0, '場上有兩位舉球員 → 不歸給個人');
+        eq(computeMatchStats(m, null).team.setQ.total, 4, '全隊照算');
+        const db = newDb(); db.matches[m.id] = m;
+        eq(computeAggregate(db, [m, m]).dist.q.good, 4, '跨場累計');
     });
     T('舊資料相容：沒有 positions／setTo 的比賽照常運作；migrate 補上空的 positions', () => {
         const old = { schema: APP_SCHEMA, version: 1, matches: { m_old: { id: 'm_old', sets: [{ no: 1, log: [] }], roster: [], format: { bestOf: 3, setPoints: [25, 25, 15] } } } };
@@ -4187,8 +4240,10 @@ function distCardHtml(dist, nameOf, scope) {
     const pids = Object.keys(dist.byPlayer).sort((a, b) => dist.byPlayer[b] - dist.byPlayer[a]), top = dist.byPlayer[pids[0]];
     return `<div class="card rp-card"><h2>${scope}：舉球配球 <span class="note">${dist.total} 球</span></h2>
         <div class="sub-label">配給哪個位置</div>${posBarHtml(dist.byPos, dist.total, true)}${posLegendHtml(dist.byPos, dist.total)}
+        ${dist.q.good + dist.q.bad + dist.q.err ? vsBar('舉球品質', [{ cls: 'good', n: dist.q.good, label: '到位' }, { cls: 'bad', n: dist.q.bad, label: '不到位' }, { cls: 'err', n: dist.q.err, label: '失誤' }], { tall: true }) : '<div class="note">還沒有評舉球品質：覆盤時選了舉給誰，再點到位／不到位／失誤。</div>'}
         <div class="sub-label" style="margin-top:10px">配給誰</div>
         ${pids.map(pid => `<div class="prow"><span class="nm">${esc(nameOf(pid))}</span>${posBarHtml(dist.byPlayerPos[pid] || {}, dist.byPlayer[pid], false, Math.max(6, Math.round(dist.byPlayer[pid] / top * 100)))}<span class="v">${dist.byPlayer[pid]} 球 ${vpct(dist.byPlayer[pid], dist.total)}</span></div>`).join('')}
+        ${dist.q.good + dist.q.bad + dist.q.err ? `<div class="sub-label" style="margin-top:10px">配給誰的舉球品質</div><div class="rtable-wrap"><table class="rtable"><thead><tr><th>球員</th><th>球數</th><th>到位</th><th>不到位</th><th>失誤</th><th>到位率</th></tr></thead><tbody>${pids.map(pid => { const q = dist.byPlayerQ[pid] || { good: 0, bad: 0, err: 0 }, tot = q.good + q.bad + q.err; return `<tr><td>${esc(nameOf(pid))}</td><td>${dist.byPlayer[pid]}</td><td>${q.good}</td><td>${q.bad}</td><td>${q.err}</td><td>${tot ? vpct(q.good, tot) : '—'}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
         <div class="note">條的長度 = 配球數（跟最多的人比）。顏色 = 那位球員「那一局」的位置（大砲／欄中／舉對／舉球員自己）。位置在每局開始前確認；有雙重位置的人以確認的為準。</div></div>`;
 }
 // 團隊對比條：攻擊、發球、接發、防守
@@ -4255,6 +4310,7 @@ function reportHtml(m) {
         ${metricRow('攔網', [['得分', t.block.pt], ['失誤', t.block.err]])}
         ${metricRow('接發', rcv.total ? [['到位', rcv.good], ['需要跑動', rcv.run], ['壞球', rcv.bad], ['失誤', rcv.err], ['到位率', fmtPct(rcv.rate)]] : [['', '—（還沒有逐球覆盤）']])}
         ${metricRow('防守', dg.total ? [['起球', dg.ok], ['沒起', dg.no], ['起球率', fmtPct(dg.rate)]].concat(dg.good + dg.run + dg.bad ? [['品質 到位', dg.good], ['需要跑動', dg.run], ['壞球', dg.bad]] : []) : [['', '—（還沒有逐球覆盤）']])}
+        ${t.setQ.total ? metricRow('舉球', [['到位', t.setQ.good], ['不到位', t.setQ.bad], ['失誤', t.setQ.err], ['到位率', fmtPct(t.setQ.rate)]]) : ''}
         ${metricRow('連續', [['最多連得', runTxt(ms.runs.us)], ['最多連失', runTxt(ms.runs.them)]])}
         ${TALLY_KEYS.some(k => ms.tally[k]) ? metricRow('舊配球', TALLY_KEYS.map(k => [k, ms.tally[k]])) : ''}
         ${ms.tracked ? '' : '<div class="note">這個範圍沒有先發陣容，發球總數與發球成功率顯示「—」。</div>'}</div>`;
@@ -4313,7 +4369,7 @@ ACT['reopen-match'] = el => {
 ui.review = null;
 const rvMatch = () => DB.matches[ui.review.matchId];
 function rvScope() { return { setIdx: ui.review.setIdx === null ? undefined : ui.review.setIdx, serveThemOnly: ui.review.serveOnly }; }
-function rvReset() { Object.assign(ui.review, { recvP: null, dig: null, resolveP: null }); }
+function rvReset() { Object.assign(ui.review, { recvP: null, dig: null, resolveP: null, sto: null }); }
 function rvRebuild(jumpToFirstUndone) {
     const m = rvMatch(), q = reviewQueue(m, rvScope());
     ui.review.order = q.map(it => it.id);
@@ -4324,7 +4380,7 @@ function rvRebuild(jumpToFirstUndone) {
 }
 function openReview(id) {
     closeSheet();
-    ui.review = { matchId: id, setIdx: null, serveOnly: false, order: [], idx: 0, all: false, recvP: null, dig: null, resolveP: null };
+    ui.review = { matchId: id, setIdx: null, serveOnly: false, order: [], idx: 0, all: false, recvP: null, dig: null, resolveP: null, sto: null };
     rvRebuild(true);
     pushView('review');
 }
@@ -4406,11 +4462,14 @@ function renderReview() {
     r.events.forEach(x => { if (x.skill === 'attack' && x.p && (x.out === 'pt' || x.out === 'err' || x.out === 'cont') && liveAtk.indexOf(x.p) === -1) liveAtk.push(x.p); });
     const posTag = id => { const c = positionOf(m, item.setIdx, id, DB); return c ? posLabel(c) : '未設位置'; };
     const toChips = (ids, action, sel) => `<div class="chips">${ids.map(id => `<button type="button" class="chip${sel === id ? ' on' : ''}" data-action="${action}" data-id="${esc(id)}">${esc(rvName(m, id))} <span class="pp">${esc(posTag(id))}</span></button>`).join('')}</div>`;
-    h += `<div class="rv-sec"><b>配球 <small>（這一球舉給誰；可多次）</small></b>
-        ${setTo.length ? `<div class="chips">${setTo.map((pid, i) => `<button class="chip on" data-action="rv-sto-del" data-i="${i}">${esc(rvName(m, pid))} <span class="pp">${esc(posTag(pid))}</span> ✕</button>`).join('')}</div>` : ''}
-        ${liveAtk.length ? `<div class="note">賽中記到這球的攻擊，點一下加入配球：</div>${toChips(liveAtk, 'rv-sto-p', null)}` : ''}
-        <div class="note">舉給誰？</div>${toChips(rvCands(m, item), 'rv-sto-p', null)}
-        <button type="button" class="chip" data-action="open-positions" data-i="${item.setIdx}">調整第 ${item.setIdx + 1} 局的位置</button></div>`;
+    const setName = q => (SET_GRADES.find(x => x[0] === q) || [0, ''])[1];
+    h += `<div class="rv-sec"><b>配球與舉球 <small>（這一球舉給誰、舉得如何；可多次）</small></b>
+        ${setTo.length ? `<div class="chips">${setTo.map((raw, i) => { const x = setEntry(raw); return `<button class="chip on" data-action="rv-sto-del" data-i="${i}">${esc(rvName(m, x.p))} <span class="pp">${esc(posTag(x.p))}</span>${x.q ? '・' + esc(setName(x.q)) : ''} ✕</button>`; }).join('')}</div>` : ''}`;
+    if (rv.sto) h += `<div class="note">舉給${esc(rvName(m, rv.sto.p))}，這一球舉得如何？（到位：攻擊手可以正常打；不到位：舉得到但偏離，要調整；失誤：直接失分）</div><div class="rv-grades three">${SET_GRADES.map(g => `<button class="${g[0]}" data-action="rv-sto-q" data-q="${g[0]}">${g[1]}</button>`).join('')}</div>
+        <div class="row"><button class="btn-solid ghost small" data-action="rv-sto-q" data-q="">先不評分</button><button class="btn-solid ghost small" data-action="rv-sto-cancel">取消</button></div>`;
+    else h += `${liveAtk.length ? `<div class="note">賽中記到這球的攻擊，點一下加入配球：</div>${toChips(liveAtk, 'rv-sto-p', null)}` : ''}
+        <div class="note">舉給誰？</div>${toChips(rvCands(m, item), 'rv-sto-p', null)}`;
+    h += `<button type="button" class="chip" data-action="open-positions" data-i="${item.setIdx}">調整第 ${item.setIdx + 1} 局的位置</button></div>`;
     h += `<div class="rv-sec"><b>防守 <small>（起球：球被接起、比賽繼續；沒起：直接落地或出界）</small></b>`;
     const digs = e.digs || [];
     const qName = q => (QUALITY_LEVELS.find(x => x[0] === q) || [0, ''])[1];
@@ -4443,7 +4502,9 @@ ACT['rv-dig-p'] = el => {
     rvCommit(m => reviewAddDig(m, rid, p, false));
 };
 ACT['rv-dig-q'] = el => { const d = ui.review.dig, rid = rvRid(), q = el.dataset.q; ui.review.dig = null; rvCommit(m => reviewAddDig(m, rid, d.p, true, q)); };
-ACT['rv-sto-p'] = el => { const rid = rvRid(); rvCommit(m => reviewAddSetTo(m, rid, el.dataset.id)); };
+ACT['rv-sto-p'] = el => { ui.review.sto = { p: el.dataset.id }; render(); };
+ACT['rv-sto-cancel'] = () => { ui.review.sto = null; render(); };
+ACT['rv-sto-q'] = el => { const d = ui.review.sto, rid = rvRid(), q = el.dataset.q; if (!d) return; ui.review.sto = null; rvCommit(m => reviewAddSetTo(m, rid, d.p, q)); };
 ACT['rv-sto-del'] = el => { const rid = rvRid(), i = Number(el.dataset.i); rvCommit(m => reviewRemoveSetTo(m, rid, i)); };
 ACT['rv-dig-del'] = el => { const rid = rvRid(), i = Number(el.dataset.i); rvCommit(m => reviewRemoveDig(m, rid, i)); };
 ACT['rv-dug-p'] = el => { const rid = rvRid(); rvCommit(m => reviewAddDug(m, rid, el.dataset.id)); };
