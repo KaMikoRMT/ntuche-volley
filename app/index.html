@@ -1,0 +1,2205 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>台大化工男排整合系統</title>
+<meta name="theme-color" content="#8c2333">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<style>
+    /* 配色與元件沿用 v5：暖色 tokens＋深色模式；紀錄表是「紙」，兩種主題都維持白底黑字 */
+    :root {
+        --bg: #f3ece3;
+        --surface: #fbf8f4;
+        --ink: #3a2e29;
+        --muted: #85766c;
+        --line: #e2d6cb;
+        --band: #8c2333;
+        --on-band: #fff8f2;
+        --band-soft: rgba(255, 248, 242, 0.16);
+        --band-line: rgba(255, 248, 242, 0.45);
+        --score: #5e7746;
+        --score-team: #3f5530;
+        --score-text: #4f6a3a;
+        --loss: #b04a4f;
+        --loss-team: #6d1a27;
+        --loss-text: #a03a40;
+        --cont: #8a6d2b;
+        --on-btn: #ffffff;
+        --chip: #f6e9e4;
+        --chip-line: #dbb7ae;
+        --chip-on: #8c2333;
+        --on-chip-on: #ffffff;
+        --gold: #e8c26a;
+        --on-gold: #3a2e29;
+        --warn: #d9a62e;
+        --on-warn: #3a2e29;
+        --pending-bg: #fff176;
+        --pending-fg: #8a6500;
+        --tally: #4a3a33;
+        --scrim: rgba(28, 18, 14, 0.5);
+        --shadow: 0 1px 4px rgba(40, 24, 18, 0.18);
+        --paper: #ffffff;
+        --paper-ink: #111111;
+        --paper-line: #9a9a9a;
+        --paper-rule: #000000;
+        --paper-rule2: #555555;
+        --paper-head: #f4f4f4;
+        --paper-label: #eeeeee;
+        --paper-soft: #fafafa;
+        --paper-dash: #bbbbbb;
+        --paper-sub: #555555;
+        --paper-pending: #fff176;
+        --paper-pending-fg: #8a6500;
+        --font-ui: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+        --font-score: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", -apple-system, sans-serif;
+        color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+            --bg: #1d1816; --surface: #28211e; --ink: #f1e7df; --muted: #a8978b; --line: #3d332e;
+            --band: #5e1824; --on-band: #fff3ec;
+            --score: #5c7646; --score-team: #445c33; --score-text: #9bbb7c;
+            --loss: #a9474e; --loss-team: #74222f; --loss-text: #ec8c90; --cont: #a88a3c;
+            --chip: #332a27; --chip-line: #54453f; --chip-on: #c4485a;
+            --warn: #c99a2a; --pending-bg: #6b5a14; --pending-fg: #ffe680;
+            --tally: #3e332e; --scrim: rgba(0, 0, 0, 0.6); --shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+            color-scheme: dark;
+        }
+    }
+    :root[data-theme="dark"] {
+        --bg: #1d1816; --surface: #28211e; --ink: #f1e7df; --muted: #a8978b; --line: #3d332e;
+        --band: #5e1824; --on-band: #fff3ec;
+        --score: #5c7646; --score-team: #445c33; --score-text: #9bbb7c;
+        --loss: #a9474e; --loss-team: #74222f; --loss-text: #ec8c90; --cont: #a88a3c;
+        --chip: #332a27; --chip-line: #54453f; --chip-on: #c4485a;
+        --warn: #c99a2a; --pending-bg: #6b5a14; --pending-fg: #ffe680;
+        --tally: #3e332e; --scrim: rgba(0, 0, 0, 0.6); --shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+        color-scheme: dark;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html { height: 100%; overscroll-behavior: none; }
+    body {
+        height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none;
+        background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px;
+        -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    }
+    button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    .tap:active { transform: translateY(1px); filter: brightness(0.9); }
+    .gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+    .col { width: 100%; max-width: 640px; margin-left: auto; margin-right: auto; }
+
+    .view { display: none; height: 100%; }
+    .view.active { display: flex; flex-direction: column; }
+
+    /* ===== 分頁畫面（首頁／隊伍／紀錄／數據） ===== */
+    #tabsView .page { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .page-inner { display: flex; flex-direction: column; gap: 14px; padding-block: 16px 24px; }
+    .page-title { background: var(--band); color: var(--on-band); border-radius: 12px; padding: 14px 16px; }
+    .page-title h1 { margin: 0; font-size: 19px; letter-spacing: 1px; }
+    .page-title p { margin: 4px 0 0; font-size: 13px; opacity: 0.85; }
+    .tabbar { flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface); border-top: 1px solid var(--line); padding-bottom: env(safe-area-inset-bottom, 0px); }
+    .tabbar button { border: none; background: transparent; min-height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 12px; font-weight: 700; color: var(--muted); }
+    .tabbar button i { font-style: normal; font-size: 19px; line-height: 1; }
+    .tabbar button.on { color: var(--chip-on); }
+    :root[data-theme="dark"] .tabbar button.on { color: #e88a98; }
+
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+    .card h2 { margin: 0; font-size: 16px; }
+    .card label, .card .card-label { font-weight: 700; font-size: 15px; }
+    .card .note, .note { font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .resume-card { border-color: var(--gold); border-width: 2px; }
+    .input-text { width: 100%; padding: 11px 12px; border: 1px solid var(--chip-line); border-radius: 8px; font-size: 16px; background: var(--bg); color: var(--ink); -webkit-user-select: auto; user-select: auto; font-family: inherit; }
+    textarea.input-text { min-height: 150px; resize: vertical; line-height: 1.5; }
+    select.input-text { appearance: auto; }
+    .row { display: flex; gap: 8px; align-items: center; }
+    .row .input-text { flex: 1; min-width: 0; }
+    .btn-solid { border: none; border-radius: 8px; padding: 0 18px; min-height: 44px; font-weight: 700; font-size: 15px; background: var(--score); color: var(--on-btn); }
+    .btn-solid.brand { background: var(--band); color: var(--on-band); }
+    .btn-solid.ghost { background: transparent; color: var(--ink); border: 1px solid var(--chip-line); }
+    .btn-solid.danger { background: var(--loss); color: var(--on-btn); }
+    .btn-solid.small { min-height: 36px; padding: 0 12px; font-size: 13px; }
+    .btn-solid.block { width: 100%; }
+    .btn-start { min-height: 54px; font-size: 18px; border-radius: 12px; }
+    .form-msg { font-size: 13px; color: var(--loss-text); min-height: 1em; }
+    .form-msg.ok { color: var(--score-text); }
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field > span { font-size: 13px; font-weight: 700; color: var(--muted); }
+    .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .seg { display: flex; border: 1px solid var(--chip-line); border-radius: 8px; overflow: hidden; }
+    .seg button { flex: 1; border: none; background: transparent; min-height: 40px; font-weight: 700; font-size: 14px; padding: 0 6px; }
+    .seg button + button { border-left: 1px solid var(--chip-line); }
+    .seg button.on { background: var(--chip-on); color: var(--on-chip-on); }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { border: 1.5px solid var(--chip-line); background: var(--chip); color: var(--ink); border-radius: 20px; min-height: 38px; padding: 0 14px; font-size: 14px; font-weight: 700; display: inline-flex; align-items: center; gap: 4px; }
+    .chip.on { background: var(--chip-on); border-color: var(--chip-on); color: var(--on-chip-on); }
+    .chip.dim { opacity: 0.5; }
+    .chip small { font-weight: 500; opacity: 0.8; font-size: 11px; }
+    .list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--surface); }
+    .list-row { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 6px 12px; border: none; border-bottom: 1px solid var(--line); background: transparent; text-align: left; width: 100%; }
+    .list-row:last-child { border-bottom: none; }
+    .list-row .lr-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+    .list-row .lr-title { font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .list-row .lr-sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .list-row .lr-num { min-width: 2.2em; text-align: center; font-family: var(--font-score); font-weight: 700; font-size: 20px; color: var(--chip-on); }
+    :root[data-theme="dark"] .list-row .lr-num { color: #e88a98; }
+    .list-row.dim { opacity: 0.55; }
+    .tagx { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 10px; background: var(--chip); border: 1px solid var(--chip-line); color: var(--muted); }
+    .empty { text-align: center; color: var(--muted); font-size: 13px; padding: 22px 8px; line-height: 1.6; }
+    .teamcols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+    .teamcol { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+    .teamcol h3 { margin: 0; font-size: 15px; display: flex; justify-content: space-between; align-items: baseline; }
+    .teamcol h3 small { font-size: 11px; color: var(--muted); font-weight: 500; }
+    .mrow { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); padding: 4px 4px 4px 8px; min-height: 44px; }
+    .mrow .mn { flex: 1; min-width: 0; font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mrow .mn small { color: var(--muted); font-weight: 500; margin-right: 4px; }
+    .mrow button { flex: 0 0 auto; border: 1px solid var(--chip-line); background: var(--chip); border-radius: 6px; min-height: 34px; padding: 0 8px; font-size: 12px; font-weight: 700; }
+    .mrow button.x { border: none; background: transparent; color: var(--muted); font-size: 16px; padding: 0 6px; }
+    .sub-label { font-size: 12px; font-weight: 700; color: var(--muted); margin-top: 6px; }
+    .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 14px; }
+    .kv dt { color: var(--muted); }
+    .kv dd { margin: 0; font-weight: 700; }
+    .toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
+    .toggle span { font-weight: 700; font-size: 14px; }
+    .toggle .note { display: block; font-weight: 500; }
+    .toggle button { flex: 0 0 auto; width: 52px; height: 30px; border-radius: 15px; border: none; background: var(--chip-line); position: relative; padding: 0; }
+    .toggle button::after { content: ''; position: absolute; top: 3px; left: 3px; width: 24px; height: 24px; border-radius: 50%; background: #fff; transition: left 0.12s; }
+    .toggle button.on { background: var(--score); }
+    .toggle button.on::after { left: 25px; }
+    .banner-warn { background: var(--pending-bg); color: var(--pending-fg); border-radius: 8px; padding: 8px 12px; font-size: 13px; font-weight: 700; }
+
+    /* ===== 場邊紀錄畫面 ===== */
+    .band { background: var(--band); color: var(--on-band); flex-shrink: 0; }
+    .band-inner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding-block: 6px; }
+    .hdr-left { display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
+    .set-btn { border: none; border-radius: 6px; background: var(--gold); color: var(--on-gold); font-weight: 800; font-size: 13px; padding: 5px 8px; white-space: nowrap; }
+    .timer-btn { border: 1px solid var(--band-line); background: var(--band-soft); color: var(--on-band); border-radius: 6px; font-size: 12px; font-weight: 700; padding: 3px 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .timer-btn.running { border-color: var(--gold); color: var(--gold); }
+    .hdr-score { text-align: center; min-width: 0; }
+    .score-line { display: flex; align-items: baseline; justify-content: center; gap: 4px; line-height: 1; }
+    .score-line .num { font-family: var(--font-score); font-weight: 700; font-size: clamp(32px, 10.5vw, 46px); font-variant-numeric: tabular-nums; min-width: 1.1em; }
+    .score-line .colon { font-family: var(--font-score); font-size: clamp(24px, 8vw, 36px); opacity: 0.7; }
+    .score-line .side { font-size: 13px; font-weight: 700; opacity: 0.8; }
+    .score-sub { font-size: 11px; opacity: 0.9; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hdr-right { display: flex; gap: 6px; }
+    .icon-btn { border: 1px solid var(--band-line); background: var(--band-soft); color: var(--on-band); border-radius: 8px; width: 46px; height: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0; font-size: 20px; line-height: 1; }
+    .icon-btn small { font-size: 10px; font-weight: 700; }
+
+    .strip { position: relative; flex-shrink: 0; background: var(--surface); border-bottom: 1px solid var(--line); padding-block: 4px; min-height: 52px; }
+    .live-tl { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+    .live-tl::-webkit-scrollbar { display: none; }
+    .live-empty { font-size: 12px; color: var(--muted); line-height: 42px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .toast {
+        position: absolute; top: 5px; bottom: 5px;
+        left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+        display: flex; align-items: center; gap: 10px; padding: 0 12px; border-radius: 8px; z-index: 3;
+        background: var(--ink); color: var(--surface); font-weight: 700; font-size: 15px; pointer-events: none;
+    }
+    .toast.score { background: var(--score); color: var(--on-btn); }
+    .toast.loss { background: var(--loss); color: var(--on-btn); }
+    .toast.cont { background: var(--cont); color: var(--on-btn); }
+    .toast.banner { background: var(--band); color: var(--on-band); pointer-events: auto; }
+    .toast-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .toast-btn { margin-left: auto; border: none; border-radius: 6px; background: var(--gold); color: var(--on-gold); font-weight: 800; font-size: 13px; padding: 7px 10px; white-space: nowrap; }
+    .toast-x { border: none; background: transparent; color: inherit; font-size: 18px; padding: 4px 2px; opacity: 0.8; }
+    .gtoast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 70; max-width: calc(100% - 32px); background: var(--ink); color: var(--surface); font-weight: 700; font-size: 14px; padding: 10px 16px; border-radius: 10px; box-shadow: var(--shadow); pointer-events: none; text-align: center; }
+
+    .pad { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding-block: 8px; overflow: hidden; }
+    .court { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
+    .crow { flex: 1 1 0; min-height: 36px; max-height: 76px; display: grid; grid-template-columns: 22px repeat(3, minmax(0, 1fr)); gap: 6px; align-items: stretch; }
+    .crow.libero-row { grid-template-columns: 22px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); }
+    .crow-label { writing-mode: vertical-rl; text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 2px; align-self: center; }
+    .player-grid { flex: 0 1 auto; display: grid; gap: 6px; grid-auto-rows: clamp(38px, 7.2vh, 56px); grid-auto-rows: clamp(38px, 7.2dvh, 56px); border-radius: 10px; align-content: start; }
+    .pbtn { border: 1.5px solid var(--chip-line); background: var(--chip); color: var(--ink); border-radius: 8px; font-weight: 700; font-size: 15px; line-height: 1.1; padding: 0 2px; display: flex; align-items: center; justify-content: center; gap: 3px; text-align: center; overflow: hidden; word-break: keep-all; min-height: 0; }
+    .pbtn .sn { font-size: 11px; font-weight: 800; color: var(--muted); }
+    .pbtn .srv { color: var(--chip-on); font-size: 13px; }
+    .pbtn.len4 { font-size: 13px; }
+    .pbtn.len5 { font-size: 11px; word-break: break-all; }
+    .pbtn.empty { border-style: dashed; color: var(--muted); font-weight: 500; }
+    .pbtn.sel { background: var(--chip-on); border-color: var(--chip-on); color: var(--on-chip-on); }
+    .pbtn.sel .sn, .pbtn.sel .srv { color: var(--on-chip-on); }
+    .pbtn.sub { background: var(--gold); border-color: var(--gold); color: var(--on-gold); }
+    .pbtn.sub small { font-size: 10px; font-weight: 700; opacity: 0.8; }
+    .pbtn.dis { opacity: 0.4; }
+    .team-row { flex: 0 0 auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; height: clamp(46px, 8.5vh, 62px); height: clamp(46px, 8.5dvh, 62px); }
+    .tmbtn { border: none; border-radius: 8px; color: var(--on-btn); font-weight: 800; font-size: 15px; line-height: 1.15; padding: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; box-shadow: 0 2px 0 rgba(0, 0, 0, 0.14); }
+    .tmbtn small { font-size: 10px; font-weight: 600; opacity: 0.85; }
+    .tmbtn.good { background: var(--score-team); }
+    .tmbtn.bad { background: var(--loss-team); }
+    .tmbtn.pend { background: var(--warn); color: var(--on-warn); }
+    .tally { flex-shrink: 0; background: var(--surface); border-top: 1px solid var(--line); padding-block: 5px; }
+    .tally-inner { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)); gap: 6px; align-items: stretch; }
+    .tally-label { font-size: 11px; font-weight: 700; color: var(--muted); writing-mode: vertical-rl; text-align: center; letter-spacing: 2px; }
+    .tbtn { border: none; border-radius: 8px; min-height: 38px; background: var(--tally); color: var(--on-btn); display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; font-size: 13px; }
+    .tbtn b { font-size: 19px; font-variant-numeric: tabular-nums; font-family: var(--font-score); }
+
+    /* 即時軌跡表（我方 / 對方兩列同一張 table，永遠對齊） */
+    .tl-table { border-collapse: collapse; }
+    .tl-table th { font-weight: 700; white-space: nowrap; }
+    .tl-table td { text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .tl-table tr.tl-ts th, .tl-table tr.tl-ts td { border: none; background: transparent; font-size: 8px; font-weight: 400; height: 12px; padding: 0; overflow: visible; }
+    .tl-live th { position: sticky; left: 0; z-index: 1; width: 34px; min-width: 34px; font-size: 11px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
+    .tl-live td { width: 24px; min-width: 24px; height: 21px; padding: 0; font-size: 12px; font-weight: 700; border: 1px solid var(--line); }
+    .tl-live tr.tl-me th, .tl-live tr.tl-me td { border-bottom: 1.5px solid var(--muted); }
+    .tl-live tr.tl-ts td { color: var(--pending-fg); }
+    .tl-live .v-me { color: var(--score-text); }
+    .tl-live .v-opp { color: var(--loss-text); }
+    .tl-live .pending { background: var(--pending-bg); color: var(--pending-fg); }
+
+    /* ===== Bottom sheet ===== */
+    .scrim { position: fixed; inset: 0; z-index: 50; background: var(--scrim); display: flex; align-items: flex-end; justify-content: center; }
+    .sheet { width: 100%; max-width: 640px; max-height: 88%; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--surface); color: var(--ink); border-radius: 16px 16px 0 0;
+        padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+    .sheet-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .sheet-head h2 { margin: 0; font-size: 17px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sheet-head .sh-sub { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+    .sheet-close { border: 1px solid var(--chip-line); background: var(--chip); border-radius: 20px; padding: 6px 14px; font-weight: 700; font-size: 13px; flex: 0 0 auto; }
+    .sheet-body { display: flex; flex-direction: column; gap: 8px; }
+    .menu-item { display: flex; align-items: center; gap: 12px; min-height: 52px; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 0 14px; font-size: 16px; font-weight: 700; text-align: left; width: 100%; }
+    .menu-item .mi-icon { width: 24px; text-align: center; font-size: 18px; }
+    .menu-item .mi-sub { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--muted); }
+    .menu-item.current { border-color: var(--chip-on); box-shadow: inset 0 0 0 1px var(--chip-on); }
+    .menu-item.danger { color: var(--loss-text); }
+    .confirm-text { font-size: 15px; line-height: 1.6; margin: 0 0 6px; white-space: pre-line; }
+    .confirm-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+    /* ② 做了什麼：按鈕 ≥ 52px */
+    .act-sec { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 6px; align-items: start; }
+    .act-sec > b { font-size: 13px; padding-top: 18px; text-align: center; }
+    .act-sec.score > b { color: var(--score-text); }
+    .act-sec.loss > b { color: var(--loss-text); }
+    .act-sec.cont > b { color: var(--cont); }
+    .act-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+    .act-grid.wide { grid-template-columns: minmax(0, 1fr); }
+    .abtn { border: none; border-radius: 8px; color: var(--on-btn); font-weight: 800; font-size: 16px; line-height: 1.1; min-height: 52px; padding: 2px; display: flex; align-items: center; justify-content: center; text-align: center; box-shadow: 0 2px 0 rgba(0, 0, 0, 0.14); }
+    .abtn.score { background: var(--score); }
+    .abtn.loss { background: var(--loss); }
+    .abtn.cont { background: var(--cont); }
+    .abtn.sm { font-size: 14px; }
+    .abtn:active { filter: brightness(0.9); }
+
+    /* 陣容編輯 */
+    .le-court { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+    .le-slot { border: 1.5px solid var(--chip-line); background: var(--chip); border-radius: 8px; min-height: 52px; padding: 2px 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-weight: 700; font-size: 15px; line-height: 1.15; }
+    .le-slot small { font-size: 11px; color: var(--muted); font-weight: 800; }
+    .le-slot.empty { border-style: dashed; color: var(--muted); font-weight: 500; }
+    .le-slot.sel { border-color: var(--chip-on); box-shadow: inset 0 0 0 2px var(--chip-on); }
+    .le-libero { grid-column: 1 / -1; }
+    .le-libero .le-slot { min-height: 46px; flex-direction: row; gap: 8px; }
+
+    /* ===== 紀錄表預覽 ===== */
+    .pv-bar { flex-shrink: 0; background: var(--band); color: var(--on-band); }
+    .pv-bar-inner { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-block: 8px; }
+    .pv-bar .pv-btn { border: 1px solid var(--band-line); background: var(--band-soft); color: var(--on-band); border-radius: 8px; min-height: 40px; padding: 0 12px; font-weight: 700; font-size: 14px; }
+    .pv-bar .pv-btn.primary { background: var(--gold); color: var(--on-gold); border-color: var(--gold); }
+    .pv-bar .pv-spacer { flex: 1; }
+    .pv-msg { width: 100%; font-size: 12px; opacity: 0.9; min-height: 0; }
+    .pv-scroll { flex: 1; overflow: auto; padding-block: 14px 24px; -webkit-overflow-scrolling: touch; -webkit-user-select: text; user-select: text; }
+
+    .img-view { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: flex; flex-direction: column; }
+    .img-bar { display: flex; align-items: center; gap: 10px; padding-block: 8px; background: var(--band); color: var(--on-band); font-size: 13px; font-weight: 700; }
+    .img-bar span { flex: 1; min-width: 0; }
+    .img-bar .pv-btn { border: 1px solid var(--band-line); background: var(--band-soft); color: var(--on-band); border-radius: 8px; min-height: 40px; padding: 0 12px; font-weight: 700; }
+    .img-scroll { flex: 1; overflow: auto; padding-block: 12px; -webkit-touch-callout: default; }
+    .img-scroll img { display: block; width: 100%; height: auto; -webkit-touch-callout: default; -webkit-user-select: auto; user-select: auto; }
+
+    /* ===== 紙本紀錄表（版面沿用 v5） ===== */
+    .paper { width: 1080px; margin: 0 auto; background: var(--paper); color: var(--paper-ink); padding: 18px 20px 22px; box-shadow: var(--shadow); font-family: var(--font-ui); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .paper + .paper { margin-top: 18px; }
+    .paper.export { box-shadow: none; margin: 0; }
+    .paper .ph { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 14px; font-weight: 700; }
+    .paper .ph > div { flex: 1; }
+    .paper .ph .r { text-align: right; }
+    .paper h1 { margin: 0; font-size: 22px; text-align: center; letter-spacing: 1px; }
+    .paper .st { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1.5px solid var(--paper-rule); text-align: center; }
+    .paper .st col.c-name { width: 58px; }
+    .paper .st th, .paper .st td { border: 0.5px solid var(--paper-line); padding: 3px 1px; overflow: hidden; }
+    .paper .st th { background: var(--paper-head); font-size: 11px; font-weight: 600; line-height: 1.15; }
+    .paper .st thead tr:last-child th { border-bottom: 1px solid var(--paper-rule); }
+    .paper .st td { height: 24px; vertical-align: middle; }
+    .paper .st td.nm { font-size: 12px; font-weight: 700; word-break: break-all; }
+    .paper .st .ss { border-left: 1.5px solid var(--paper-rule); }
+    .paper .st .ls { border-left: 1px solid var(--paper-rule2); }
+    .paper .st td.tm { background: var(--paper-soft); }
+    .zg-wrap { display: inline-flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 1px; line-height: 0; vertical-align: middle; }
+    .zg { width: 15px; height: 15px; display: block; }
+    .paper .tlc { margin-top: 16px; border: 1.5px solid var(--paper-rule); padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+    .paper .ph .r u { display: inline-block; min-width: 56px; text-align: center; text-decoration: none; border-bottom: 1px solid var(--paper-rule); }
+    .paper .tls { display: flex; align-items: stretch; gap: 8px; border-bottom: 1px dashed var(--paper-dash); padding-bottom: 10px; break-inside: avoid; page-break-inside: avoid; }
+    .paper .tls:last-child { border-bottom: none; padding-bottom: 0; }
+    .paper .tls-num { width: 22px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; border: 1px solid var(--paper-rule); }
+    .paper .tls .tll { flex: 1; min-width: 0; }
+    .paper .tls-score { width: 104px; flex-shrink: 0; border: 1.5px solid var(--paper-rule); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+    .paper .tls-score span { font-size: 11px; color: var(--paper-sub); }
+    .paper .tls-score b { font-size: 26px; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+    .paper .tll { display: flex; flex-direction: column; gap: 6px; }
+    .paper .tl-empty { color: var(--paper-sub); padding: 6px; }
+    .tl-paper { width: 100%; table-layout: fixed; }
+    .tl-paper th { width: 44px; font-size: 11px; background: var(--paper-label); border: 0.5px solid var(--paper-line); }
+    .tl-paper td { height: 22px; padding: 0; font-size: 12px; font-weight: 600; border: 0.5px solid var(--paper-line); }
+    .tl-paper tr.tl-me th, .tl-paper tr.tl-me td { border-bottom: 1px solid var(--paper-rule); }
+    .tl-paper tr.tl-ts td { color: var(--paper-pending-fg); }
+    .tl-paper .pending { background: var(--paper-pending); }
+
+    @media print {
+        @page { size: A4 landscape; margin: 8mm; }
+        html, body { height: auto; overflow: visible; background: #fff; }
+        .view, .scrim { display: none !important; }
+        #previewView { display: block !important; }
+        .pv-bar { display: none !important; }
+        .pv-scroll { overflow: visible; padding: 0; }
+        .paper { width: 100%; zoom: 1 !important; box-shadow: none; padding: 0; break-after: page; }
+        .paper + .paper { margin-top: 0; }
+    }
+</style>
+</head>
+<body>
+
+<!-- ============ 分頁畫面：首頁／隊伍／紀錄／數據 ============ -->
+<div id="tabsView" class="view active">
+    <div class="page" id="page"></div>
+    <nav class="tabbar" id="tabbar">
+        <button data-action="tab" data-tab="home"><i>🏠</i>首頁</button>
+        <button data-action="tab" data-tab="teams"><i>👥</i>隊伍</button>
+        <button data-action="tab" data-tab="record"><i>🏐</i>紀錄</button>
+        <button data-action="tab" data-tab="stats"><i>📊</i>數據</button>
+    </nav>
+</div>
+
+<!-- ============ 賽中紀錄畫面（全螢幕，不顯示分頁列） ============ -->
+<div id="liveView" class="view">
+    <header class="band">
+        <div class="band-inner col gutter">
+            <div class="hdr-left">
+                <button class="set-btn" id="setBtn" data-tap="set-menu">第 1 局 ▾</button>
+                <button class="timer-btn" id="timerBtn" data-tap="timer-toggle">▶ 00:00</button>
+            </div>
+            <div class="hdr-score">
+                <div class="score-line">
+                    <span class="side">我</span>
+                    <span class="num" id="myScore">0</span>
+                    <span class="colon">:</span>
+                    <span class="num" id="oppScore">0</span>
+                    <span class="side">對</span>
+                </div>
+                <div class="score-sub" id="hdrSub"></div>
+            </div>
+            <div class="hdr-right">
+                <button class="icon-btn tap" data-tap="undo" aria-label="復原上一筆">↶<small>復原</small></button>
+                <button class="icon-btn" data-tap="live-menu" aria-label="開啟選單">☰<small>選單</small></button>
+            </div>
+        </div>
+    </header>
+    <section class="strip">
+        <div class="col gutter"><div class="live-tl" id="liveTl"></div></div>
+        <div class="toast" id="toast" hidden></div>
+    </section>
+    <main class="pad col gutter" id="livePad"></main>
+    <footer class="tally" id="liveTally"></footer>
+</div>
+
+<!-- ============ 紀錄表預覽 / 匯出 ============ -->
+<div id="previewView" class="view">
+    <div class="pv-bar">
+        <div class="pv-bar-inner gutter">
+            <button class="pv-btn" data-action="pv-back">← 返回</button>
+            <span class="pv-spacer"></span>
+            <button class="pv-btn" id="pvFit" data-action="pv-fit">實際大小</button>
+            <button class="pv-btn primary" id="pvPng" data-action="pv-png">存成圖片</button>
+            <button class="pv-btn primary" id="pvPdf" data-action="pv-pdf">存成 PDF</button>
+            <button class="pv-btn" id="pvPrint" data-action="pv-print" hidden>列印</button>
+            <div class="pv-msg" id="pvMsg" hidden></div>
+        </div>
+    </div>
+    <div class="pv-scroll gutter" id="pvScroll"></div>
+</div>
+
+<!-- ============ 圖片（長按儲存） ============ -->
+<div class="img-view" id="imgView" hidden>
+    <div class="img-bar gutter">
+        <span>長按圖片 →「加入照片」或「分享」傳到 LINE</span>
+        <button class="pv-btn" data-action="img-close">關閉</button>
+    </div>
+    <div class="img-scroll gutter"><img id="imgOut" alt="比賽紀錄表圖片"></div>
+</div>
+
+<!-- ============ Bottom sheet ============ -->
+<div class="scrim" id="scrim" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+        <div class="sheet-head">
+            <h2 id="sheetTitle"></h2>
+            <span class="sh-sub" id="sheetSub"></span>
+            <button class="sheet-close" data-action="sheet-close" aria-label="關閉">✕</button>
+        </div>
+        <div class="sheet-body" id="sheetBody"></div>
+    </div>
+</div>
+<div class="gtoast" id="gtoast" hidden></div>
+<input type="file" id="fileIn" accept=".json,application/json,text/plain" hidden>
+
+<script>
+/* ==================================================================
+   純邏輯（不碰 DOM、不碰 window）：tests/selftest.mjs 會把下面這一段抽出來在 Node 裡執行
+   ================================================================== */
+/* @core-begin */
+
+/* ===== CONFIG ===== */
+const APP_SCHEMA = 'ntuche-volley';
+const DB_VERSION = 1;
+const NOT_OURS_MSG = '這不是化工男排的紀錄檔';
+
+const POSITIONS = ['S', 'OH', 'MB', 'OPP', 'L'];
+const POS_LABEL = { S: '舉球', OH: '大砲', MB: '攔中', OPP: '舉對', L: '自由' };
+const POS_ALIASES = {
+    S: ['S', '舉球', '舉', '二傳', '舉球員'],
+    OH: ['OH', '大砲', '大炮', '主攻', '邊攻'],
+    MB: ['MB', '攔中', '副攻', '中間', '中攻'],
+    OPP: ['OPP', '舉對', '背', '對角', '接應'],
+    L: ['L', '自由', '自由球員', 'LIBERO', 'LIB']
+};
+const POS_LOOKUP = (() => {
+    const m = {};
+    POSITIONS.forEach(code => POS_ALIASES[code].forEach(a => { m[a.toLowerCase()] = code; }));
+    return m;
+})();
+const PLAYER_STATUS = { active: '在隊', graduated: '已畢業', archived: '封存' };
+
+const FORMATS = {
+    bo3: { bestOf: 3, setPoints: [25, 25, 15], label: '三局兩勝' },
+    bo5: { bestOf: 5, setPoints: [25, 25, 25, 25, 15], label: '五局三勝' }
+};
+const MAX_SUBS = 6;
+const TALLY_KEYS = ['欄中', '背', '大砲'];
+const SETS_PER_SHEET = 3;
+const TL_PER_LINE = 30;
+
+// 正字紀錄表欄位（順序與欄位名稱完全沿用 v5）
+const SCORE_KEYS = ['發球', '攻擊', '吊球', '攔網'];
+const LOSS_KEYS = ['發球', '接球', '攻擊', '防守', '二傳', '吊球', '觸網', '攔網', '舉球'];
+const LABELS = { '觸網': '觸網越界' };
+
+/* 按鈕 → 事件 → 紀錄表欄位 對照表（畫面按鈕、統計、紀錄表都讀這一張）
+   group: score 得分｜loss 失分｜team 免選人｜cont 繼續（這球還沒結束）
+   when:  serve 只在我方發球時顯示（有輪轉時只給發球者）｜receive 只在對方發球時顯示 */
+const ACTIONS = [
+    { id: 's_attack', label: '攻擊', group: 'score', skill: 'attack', out: 'pt', det: 'spike', col: '攻擊' },
+    { id: 's_tip', label: '吊球', group: 'score', skill: 'attack', out: 'pt', det: 'tip', col: '吊球' },
+    { id: 's_block', label: '攔網', group: 'score', skill: 'block', out: 'pt', det: '', col: '攔網' },
+    { id: 's_serve', label: '發球', group: 'score', skill: 'serve', out: 'pt', det: '', col: '發球', when: 'serve' },
+    { id: 'l_attack', label: '攻擊', group: 'loss', skill: 'attack', out: 'err', det: 'spike', col: '攻擊' },
+    { id: 'l_tip', label: '吊球', group: 'loss', skill: 'attack', out: 'err', det: 'tip', col: '吊球' },
+    { id: 'l_block', label: '攔網', group: 'loss', skill: 'block', out: 'err', det: '', col: '攔網' },
+    { id: 'l_net', label: '觸網越界', group: 'loss', skill: 'fault', out: 'err', det: 'net', col: '觸網' },
+    { id: 'l_receive', label: '接球', group: 'loss', skill: 'receive', out: 'err', det: '', col: '接球', when: 'receive' },
+    { id: 'l_dig', label: '防守', group: 'loss', skill: 'dig', out: 'err', det: '', col: '防守' },
+    { id: 'l_second', label: '二傳', group: 'loss', skill: 'set', out: 'err', det: 'second', col: '二傳' },
+    { id: 'l_setter', label: '舉球', group: 'loss', skill: 'set', out: 'err', det: 'setter', col: '舉球' },
+    { id: 'l_serve', label: '發球', group: 'loss', skill: 'serve', out: 'err', det: '', col: '發球', when: 'serve' },
+    { id: 't_opp_err', label: '對方失誤', group: 'team', skill: 'team', out: 'opp_err', det: '', col: '對方失誤' },
+    { id: 't_opp_pt', label: '對手好球', group: 'team', skill: 'team', out: 'opp_pt', det: '', col: '對手好球' },
+    { id: 't_pending', label: '待確認', group: 'team', skill: 'team', out: 'opp_pt', det: '', pending: true },
+    { id: 'c_attack', label: '攻擊被守起', group: 'cont', skill: 'attack', out: 'cont', det: 'spike' }
+];
+const ACTION_BY_ID = {};
+ACTIONS.forEach(a => { ACTION_BY_ID[a.id] = a; });
+
+// 依主位置把常用項放前面（只調順序，不隱藏）
+const POS_PREF = {
+    S: ['l_setter', 'l_second', 's_serve', 'l_serve'],
+    OH: ['s_attack', 'l_attack', 'l_receive', 'l_dig'],
+    MB: ['s_block', 'l_block', 's_attack', 'l_attack'],
+    OPP: ['s_attack', 'l_attack', 's_block', 'l_block'],
+    L: ['l_receive', 'l_dig', 'l_second']
+};
+
+const DEFAULT_SETTINGS = { teamTitle: '台大化工男排', showTallyRow: true, trackLineupDefault: true, theme: 'system' };
+
+/* ===== UTIL ===== */
+function uid(prefix) {
+    let r;
+    if (typeof crypto !== 'undefined' && crypto && typeof crypto.randomUUID === 'function') r = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
+    else r = Date.now().toString(36).slice(-5) + Math.random().toString(36).slice(2, 9);
+    return prefix + r;
+}
+function clone(o) { return o === undefined ? undefined : JSON.parse(JSON.stringify(o)); }
+function pad2(n) { return String(n).padStart(2, '0'); }
+function dateStr(d) { d = d || new Date(); return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+function fmtClock(ms) {
+    const t = Math.max(0, Math.floor(ms / 1000));
+    return `${pad2(Math.floor(t / 60))}:${pad2(t % 60)}`;
+}
+// 每次改到實體就更新 updatedAt（合併匯入只靠這個時間；保證嚴格遞增）
+function touch(obj) {
+    const n = Date.now();
+    obj.updatedAt = n > (obj.updatedAt || 0) ? n : (obj.updatedAt || 0) + 1;
+    return obj;
+}
+function posLabel(code) { return POS_LABEL[code] || code; }
+function actionLabel(a) { return LABELS[a] || a; }
+
+/* ===== SCHEMA ===== */
+function newDb() {
+    return {
+        schema: APP_SCHEMA, version: DB_VERSION, exportedAt: null, deviceId: uid('d_'),
+        settings: clone(DEFAULT_SETTINGS),
+        players: {}, seasons: {}, teams: {}, matches: {}, matches_conflict: {},
+        lastBackupAt: null
+    };
+}
+function newPlayer(f) {
+    const n = Date.now();
+    const yr = parseInt(f.entryYear, 10);
+    return {
+        id: uid('p_'),
+        name: String(f.name || '').trim(),
+        number: String(f.number == null ? '' : f.number).trim(),
+        positions: Array.isArray(f.positions) ? f.positions.filter(p => POS_LABEL[p]) : [],
+        entryYear: Number.isFinite(yr) ? yr : null,
+        status: 'active',
+        note: String(f.note || ''),
+        createdAt: n, updatedAt: n
+    };
+}
+function newLineup(slots, libero) {
+    const s = {};
+    for (let i = 1; i <= 6; i++) if (slots && slots[i]) s[i] = slots[i];
+    return { system: '5-1', slots: s, libero: libero || null };
+}
+function cloneLineup(l) {
+    if (!l) return null;
+    return newLineup(l.slots, l.libero);
+}
+function lineupComplete(l) {
+    if (!l) return false;
+    for (let i = 1; i <= 6; i++) if (!l.slots[i]) return false;
+    return true;
+}
+function emptySet(no) { return { no, firstServe: null, lineup: null, log: [] }; }
+function rosterEntry(p) { return { playerId: p.id, name: p.name, number: p.number, positions: (p.positions || []).slice() }; }
+function newMatch(o) {
+    const fmt = FORMATS[o.formatKey] || FORMATS.bo3;
+    const n = Date.now();
+    const sets = [];
+    for (let i = 0; i < fmt.bestOf; i++) sets.push(emptySet(i + 1));
+    sets[0].firstServe = o.firstServe || null;
+    sets[0].lineup = cloneLineup(o.lineup);
+    return {
+        id: uid('m_'),
+        teamId: o.teamId || null,
+        opponent: String(o.opponent || '').trim() || '未填寫',
+        event: String(o.event || '').trim(),
+        date: o.date || dateStr(),
+        format: { bestOf: fmt.bestOf, setPoints: fmt.setPoints.slice() },
+        roster: (o.roster || []).map(rosterEntry),
+        sets, review: {},
+        status: 'live',
+        recorder: String(o.recorder || '').trim(),
+        curSet: 0,
+        timer: { ms: 0, since: null },
+        createdAt: n, updatedAt: n
+    };
+}
+
+// 載入（本機或匯入檔）時一律先跑：回傳 { ok, db } 或 { ok:false, error }
+function migrate(db) {
+    if (!db || typeof db !== 'object' || Array.isArray(db) || db.schema !== APP_SCHEMA) return { ok: false, error: NOT_OURS_MSG };
+    const v = Number(db.version);
+    if (!(v >= 1)) return { ok: false, error: NOT_OURS_MSG };
+    if (v > DB_VERSION) return { ok: false, error: '這份紀錄檔來自較新版本的程式，請先更新程式再匯入' };
+    // 之後改格式在這裡加：if (v < 2) { …; db.version = 2; }
+    db.version = DB_VERSION;
+    db.settings = Object.assign(clone(DEFAULT_SETTINGS), db.settings && typeof db.settings === 'object' ? db.settings : {});
+    ['players', 'seasons', 'teams', 'matches', 'matches_conflict'].forEach(k => {
+        if (!db[k] || typeof db[k] !== 'object' || Array.isArray(db[k])) db[k] = {};
+    });
+    if (!db.deviceId) db.deviceId = uid('d_');
+    if (db.lastBackupAt === undefined) db.lastBackupAt = null;
+    ['players', 'seasons', 'teams', 'matches'].forEach(k => {
+        Object.keys(db[k]).forEach(id => {
+            const e = db[k][id];
+            if (!e || typeof e !== 'object') { delete db[k][id]; return; }
+            e.id = id;
+            if (typeof e.updatedAt !== 'number') e.updatedAt = typeof e.createdAt === 'number' ? e.createdAt : 0;
+            if (typeof e.createdAt !== 'number') e.createdAt = e.updatedAt;
+        });
+    });
+    Object.keys(db.teams).forEach(id => { if (!Array.isArray(db.teams[id].memberIds)) db.teams[id].memberIds = []; });
+    Object.keys(db.matches).forEach(id => {
+        const m = db.matches[id];
+        if (!Array.isArray(m.sets)) m.sets = [];
+        m.sets.forEach((s, i) => { if (!Array.isArray(s.log)) s.log = []; if (!s.no) s.no = i + 1; if (s.firstServe === undefined) s.firstServe = null; if (s.lineup === undefined) s.lineup = null; });
+        if (!m.review || typeof m.review !== 'object') m.review = {};
+        if (!Array.isArray(m.roster)) m.roster = [];
+        if (!m.format || !Array.isArray(m.format.setPoints)) m.format = { bestOf: FORMATS.bo3.bestOf, setPoints: FORMATS.bo3.setPoints.slice() };
+        if (typeof m.curSet !== 'number') m.curSet = 0;
+        if (!m.timer || typeof m.timer !== 'object') m.timer = { ms: 0, since: null };
+        if (!m.status) m.status = 'live';
+        if (m.recorder === undefined) m.recorder = '';
+    });
+    return { ok: true, db };
+}
+// 把文字（檔案內容、貼上的文字）解析成資料庫；不覆蓋任何東西
+function parseDbText(text) {
+    let obj;
+    try { obj = JSON.parse(String(text).replace(/^﻿/, '')); } catch (e) { return { ok: false, error: NOT_OURS_MSG }; }
+    return migrate(obj);
+}
+
+/* ===== 球員庫與隊伍（P2） ===== */
+function numKey(n) { const x = parseInt(n, 10); return Number.isFinite(x) ? x : 9999; }
+function sortPlayers(list) {
+    return list.slice().sort((a, b) => numKey(a.number) - numKey(b.number) || String(a.number).localeCompare(String(b.number)) || a.name.localeCompare(b.name, 'zh-Hant'));
+}
+// 選單裡能選的球員：只有「在隊」；封存與已畢業的不出現，但舊紀錄照常顯示
+function selectablePlayers(db) {
+    return sortPlayers(Object.values(db.players).filter(p => p.status === 'active'));
+}
+function playerHasMatches(db, pid) {
+    return Object.values(db.matches).some(m => matchParticipants(m).has(pid));
+}
+function addPlayerTo(db, f) {
+    const p = newPlayer(f);
+    db.players[p.id] = p;
+    return p;
+}
+function updatePlayerIn(db, pid, f) {
+    const p = db.players[pid];
+    if (!p) return null;
+    if (f.name !== undefined) p.name = String(f.name).trim();
+    if (f.number !== undefined) p.number = String(f.number).trim();
+    if (f.positions !== undefined) p.positions = f.positions.filter(c => POS_LABEL[c]);
+    if (f.entryYear !== undefined) { const y = parseInt(f.entryYear, 10); p.entryYear = Number.isFinite(y) ? y : null; }
+    if (f.status !== undefined && PLAYER_STATUS[f.status]) p.status = f.status;
+    if (f.note !== undefined) p.note = String(f.note);
+    touch(p);
+    return p;
+}
+function seasonsSorted(db) {
+    return Object.values(db.seasons).sort((a, b) => String(b.startDate || '').localeCompare(String(a.startDate || '')) || b.createdAt - a.createdAt);
+}
+function teamsOfSeason(db, seasonId) {
+    return Object.values(db.teams).filter(t => t.seasonId === seasonId).sort((a, b) => a.name.localeCompare(b.name, 'zh-Hant') || a.createdAt - b.createdAt);
+}
+function teamLabel(db, teamId) {
+    const t = db.teams[teamId];
+    if (!t) return '（已移除的隊伍）';
+    const s = db.seasons[t.seasonId];
+    return `${s ? s.name + ' ' : ''}${t.name}`;
+}
+function nextSeasonName(name) {
+    const m = /^(\d+)-(\d+)$/.exec(String(name || '').trim());
+    if (!m) return name ? `${name}（新）` : '';
+    return Number(m[2]) >= 2 ? `${Number(m[1]) + 1}-1` : `${m[1]}-${Number(m[2]) + 1}`;
+}
+function addTeamTo(db, seasonId, name) {
+    const n = Date.now();
+    const t = { id: uid('t_'), seasonId, name, memberIds: [], defaultLineup: null, createdAt: n, updatedAt: n };
+    db.teams[t.id] = t;
+    return t;
+}
+// 新增賽季：自動建立 A隊、B隊
+function addSeasonTo(db, f) {
+    const n = Date.now();
+    const s = { id: uid('s_'), name: String(f.name || '').trim(), startDate: f.startDate || dateStr(), createdAt: n, updatedAt: n };
+    db.seasons[s.id] = s;
+    addTeamTo(db, s.id, 'A隊');
+    addTeamTo(db, s.id, 'B隊');
+    return s;
+}
+// 複製上一季：兩隊與在隊成員一併帶過來（已畢業、封存的不帶），預設陣容只保留還在隊上的人
+function copySeasonIn(db, fromSeasonId, f) {
+    const s = addSeasonTo(db, f);
+    const newTeams = teamsOfSeason(db, s.id);
+    teamsOfSeason(db, fromSeasonId).forEach(src => {
+        let dst = newTeams.find(t => t.name === src.name);
+        if (!dst) dst = addTeamTo(db, s.id, src.name);
+        dst.memberIds = src.memberIds.filter(pid => db.players[pid] && db.players[pid].status === 'active');
+        dst.defaultLineup = cleanLineup(src.defaultLineup, dst.memberIds);
+    });
+    return s;
+}
+function cleanLineup(l, memberIds) {
+    if (!l) return null;
+    const ok = pid => pid && memberIds.indexOf(pid) !== -1;
+    const slots = {};
+    for (let i = 1; i <= 6; i++) if (ok(l.slots[i])) slots[i] = l.slots[i];
+    const out = newLineup(slots, ok(l.libero) ? l.libero : null);
+    return Object.keys(out.slots).length || out.libero ? out : null;
+}
+// 把球員放進某隊（同一賽季只會在一隊：從另一隊拿掉）。球員 ID 不變，生涯數據自動跟著走。
+function moveMemberIn(db, pid, toTeamId) {
+    const to = db.teams[toTeamId];
+    if (!to || !db.players[pid]) return false;
+    teamsOfSeason(db, to.seasonId).forEach(t => {
+        if (t.id === toTeamId) return;
+        const i = t.memberIds.indexOf(pid);
+        if (i !== -1) {
+            t.memberIds.splice(i, 1);
+            t.defaultLineup = cleanLineup(t.defaultLineup, t.memberIds);
+            touch(t);
+        }
+    });
+    if (to.memberIds.indexOf(pid) === -1) to.memberIds.push(pid);
+    touch(to);
+    return true;
+}
+function removeMemberIn(db, pid, teamId) {
+    const t = db.teams[teamId];
+    if (!t) return false;
+    const i = t.memberIds.indexOf(pid);
+    if (i === -1) return false;
+    t.memberIds.splice(i, 1);
+    t.defaultLineup = cleanLineup(t.defaultLineup, t.memberIds);
+    touch(t);
+    return true;
+}
+function playerTeamHistory(db, pid) {
+    const out = [];
+    Object.values(db.teams).forEach(t => {
+        if (t.memberIds.indexOf(pid) !== -1) out.push({ team: t, season: db.seasons[t.seasonId] || null });
+    });
+    out.sort((a, b) => String((b.season && b.season.startDate) || '').localeCompare(String((a.season && a.season.startDate) || '')));
+    return out;
+}
+// 快速匯入名單：每行「背號 姓名 位置」，順序彈性（背號可以在前或在後；位置可以多個，用 / 隔開）
+function parseRosterText(text) {
+    const rows = [];
+    String(text || '').split(/\r?\n/).forEach((raw, idx) => {
+        const line = raw.trim();
+        if (!line) return;
+        const toks = line.split(/[\s,，、;；\t]+/).filter(Boolean);
+        let number = null, positions = [], nameParts = [];
+        toks.forEach(tk => {
+            const t = tk.replace(/^[#＃]/, '');
+            if (number === null && /^\d{1,3}$/.test(t)) { number = t; return; }
+            const codes = t.split(/[\/／+]/).map(x => POS_LOOKUP[x.toLowerCase()]);
+            if (codes.length && codes.every(Boolean)) { codes.forEach(c => { if (positions.indexOf(c) === -1) positions.push(c); }); return; }
+            nameParts.push(t);
+        });
+        const name = nameParts.join(' ').trim();
+        if (!name) rows.push({ line: idx + 1, raw: line, ok: false, error: '找不到姓名' });
+        else rows.push({ line: idx + 1, raw: line, ok: true, name, number: number === null ? '' : number, positions });
+    });
+    return rows;
+}
+// 預覽：哪幾行會建立新球員，哪幾行與現有球員同名同背號（要問合併還是新建）
+function planRosterImport(db, rows) {
+    return rows.filter(r => r.ok).map(r => {
+        const dup = Object.values(db.players).find(p => p.name === r.name && String(p.number) === String(r.number));
+        return { row: r, dupId: dup ? dup.id : null };
+    });
+}
+// choices: { [line]: 'merge' | 'new' }，沒指定的重複行預設合併。回傳 { created, merged, ids }
+function applyRosterImport(db, plan, choices) {
+    const res = { created: 0, merged: 0, ids: [] };
+    (plan || []).forEach(it => {
+        const r = it.row;
+        const choice = (choices && choices[r.line]) || 'merge';
+        if (it.dupId && choice === 'merge' && db.players[it.dupId]) {
+            const p = db.players[it.dupId];
+            if (r.positions.length) updatePlayerIn(db, p.id, { positions: r.positions });
+            res.merged++; res.ids.push(p.id);
+        } else {
+            const p = addPlayerTo(db, { name: r.name, number: r.number, positions: r.positions });
+            res.created++; res.ids.push(p.id);
+        }
+    });
+    return res;
+}
+
+/* ===== DERIVE：事件流 → 比分、輪轉、誰發球（純函式） ===== */
+function findAction(ev) {
+    const det = ev.det || '', pend = !!ev.pending;
+    let loose = null;
+    for (const a of ACTIONS) {
+        if (a.skill !== ev.skill || a.out !== ev.out || !!a.pending !== pend) continue;
+        if ((a.det || '') === det) return a;
+        if (!loose) loose = a;
+    }
+    return loose;
+}
+// 事件 → 正字紀錄表的欄位；cont 與待確認不進球員欄
+function sheetCell(ev) {
+    const a = findAction(ev);
+    if (!a || a.pending || a.group === 'cont' || !a.col) return null;
+    return { side: a.group, key: a.col };
+}
+function buildEvent(actionId, playerId, extra) {
+    const a = ACTION_BY_ID[actionId];
+    const ev = {
+        k: 'ev', id: uid('e_'), t: Date.now(),
+        p: a.group === 'team' ? null : (playerId || null),
+        skill: a.skill, out: a.out, det: a.det || '',
+        pending: !!a.pending, src: 'live'
+    };
+    return extra ? Object.assign(ev, extra) : ev;
+}
+// 待確認的球在覆盤時補了原因，就算進補上的那位球員
+function effectiveEvent(ev, review) {
+    if (ev.pending && review && review[ev.id] && review[ev.id].resolve) {
+        const r = review[ev.id].resolve;
+        if (r.p) return Object.assign({}, ev, { p: r.p, skill: r.skill || 'attack', det: r.det || '', out: 'err', pending: false, resolved: true });
+        return Object.assign({}, ev, { pending: false, resolved: true });
+    }
+    return ev;
+}
+function rotateLineup(l, dir) {
+    if (!l) return null;
+    const o = l.slots, s = {};
+    for (let i = 1; i <= 6; i++) {
+        // 前進：新1←舊2，新2←舊3 … 新6←舊1；倒轉相反
+        const from = dir >= 0 ? (i % 6) + 1 : ((i + 4) % 6) + 1;
+        if (o[from]) s[i] = o[from];
+    }
+    return newLineup(s, l.libero);
+}
+function replaySet(set, match) {
+    const review = match && match.review ? match.review : null;
+    const st = {
+        no: set.no,
+        rallies: [], score: { us: 0, them: 0 },
+        firstServe: set.firstServe || null,
+        serving: set.firstServe || null,
+        tracked: !!(set.lineup && set.firstServe),
+        rotation: cloneLineup(set.lineup), onCourt: [], libero: null,
+        subsUsed: 0, tally: { 欄中: 0, 背: 0, 大砲: 0 },
+        openRally: [], lastEntry: null, server: null
+    };
+    let open = [];
+    (set.log || []).forEach(e => {
+        st.lastEntry = e;
+        if (e.k === 'ev') {
+            const ev = effectiveEvent(e, review);
+            if (e.out === 'cont') { open.push(ev); return; }
+            const winner = (e.out === 'pt' || e.out === 'opp_err') ? 'us' : 'them';
+            const serve = st.serving;
+            const server = (serve === 'us' && st.rotation) ? (st.rotation.slots[1] || null) : null;
+            if (winner === 'us') st.score.us++; else st.score.them++;
+            st.rallies.push({
+                id: e.id, no: st.rallies.length + 1, serve, server,
+                events: open.concat([ev]), winner,
+                score: { us: st.score.us, them: st.score.them },
+                t: e.t, pending: !!e.pending, ts: e.ts || null, end: ev
+            });
+            open = [];
+            if (serve !== null) {
+                if (serve === 'them' && winner === 'us' && st.rotation) st.rotation = rotateLineup(st.rotation, 1);
+                st.serving = winner;
+            }
+        } else if (e.k === 'sub') {
+            if (st.rotation) {
+                let done = false;
+                for (let n = 1; n <= 6; n++) if (st.rotation.slots[n] === e.outP) { st.rotation.slots[n] = e.inP; done = true; break; }
+                if (done) st.subsUsed++;
+                else if (st.rotation.libero === e.outP) st.rotation.libero = e.inP;
+            }
+        } else if (e.k === 'rot') {
+            if (st.rotation) st.rotation = rotateLineup(st.rotation, e.dir >= 0 ? 1 : -1);
+        } else if (e.k === 'lineup') {
+            st.rotation = cloneLineup(e.lineup);
+        } else if (e.k === 'tally') {
+            if (st.tally[e.key] !== undefined) st.tally[e.key]++;
+        }
+    });
+    st.openRally = open;
+    if (st.rotation) {
+        for (let n = 1; n <= 6; n++) st.onCourt.push(st.rotation.slots[n] || null);
+        st.libero = st.rotation.libero || null;
+        if (st.serving === 'us') st.server = st.rotation.slots[1] || null;
+    }
+    return st;
+}
+// 一局要打到目標分且領先 2 分；進行中的局回傳 null
+function setWinnerOf(score, target) {
+    if (score.us >= target && score.us - score.them >= 2) return 'us';
+    if (score.them >= target && score.them - score.us >= 2) return 'them';
+    return null;
+}
+function matchSummary(match) {
+    const need = Math.ceil(match.format.bestOf / 2);
+    const sets = [];
+    let us = 0, them = 0;
+    match.sets.forEach((set, i) => {
+        const st = replaySet(set, match);
+        const target = match.format.setPoints[i] || match.format.setPoints[match.format.setPoints.length - 1];
+        const winner = setWinnerOf(st.score, target);
+        if (winner === 'us') us++; else if (winner === 'them') them++;
+        sets.push({ no: i + 1, state: st, score: st.score, target, winner, started: set.log.length > 0 });
+    });
+    const done = us >= need || them >= need;
+    return { sets, us, them, need, done, winner: us >= need ? 'us' : them >= need ? 'them' : null };
+}
+// v5 的比分軌跡格式：{ team:'me'|'opp', val, isPending, timestamp }
+function setTimeline(st) {
+    return st.rallies.map(r => ({
+        team: r.winner === 'us' ? 'me' : 'opp',
+        val: r.winner === 'us' ? r.score.us : r.score.them,
+        isPending: r.pending,
+        timestamp: r.pending ? (r.ts || null) : null
+    }));
+}
+// 下一局預設先發：帶入上一局最後在場的陣容
+function lineupCarry(st) { return st.rotation ? cloneLineup(st.rotation) : null; }
+
+// 彈窗裡能點的原因（只用確定的規則，不猜）
+function visibleActions(ctx) {
+    const out = { score: [], loss: [], cont: [] };
+    ACTIONS.forEach(a => {
+        if (a.group === 'team') return;
+        if (a.when === 'serve') {
+            if (ctx.serving === 'them') return;
+            if (ctx.serving === 'us' && ctx.tracked && ctx.server && ctx.playerId !== ctx.server) return;
+        }
+        if (a.when === 'receive' && ctx.serving === 'us') return;
+        out[a.group].push(a);
+    });
+    const pref = POS_PREF[ctx.pos] || [];
+    const rank = a => { const i = pref.indexOf(a.id); return i === -1 ? 99 : i; };
+    ['score', 'loss'].forEach(g => { out[g] = out[g].map((a, i) => ({ a, i })).sort((x, y) => rank(x.a) - rank(y.a) || x.i - y.i).map(x => x.a); });
+    return out;
+}
+function nameOfIn(match, db, pid) {
+    const r = match && match.roster.find(x => x.playerId === pid);
+    if (r) return r.name;
+    return db && db.players[pid] ? db.players[pid].name : '?';
+}
+function describeEntry(e, nameOf) {
+    if (e.k === 'ev') {
+        const a = findAction(e);
+        if (!a) return '紀錄';
+        if (a.group === 'team') return a.label;
+        const who = e.p ? nameOf(e.p) : '';
+        if (a.group === 'cont') return `${who}・攻擊被守起`;
+        return `${who}・${a.label}${a.group === 'score' ? '得分' : '失分'}`;
+    }
+    if (e.k === 'sub') return `換人 ${nameOf(e.outP)} → ${nameOf(e.inP)}`;
+    if (e.k === 'rot') return `輪轉 ${e.dir >= 0 ? '＋1' : '－1'}`;
+    if (e.k === 'tally') return `配球 ${e.key}`;
+    if (e.k === 'lineup') return '修改場上號位';
+    return '紀錄';
+}
+// 復原只作用在這一局：刪掉最後一筆；這一局沒有紀錄回傳 null（絕不跨回上一局）
+function popLastEntry(match, setIdx) {
+    const set = match.sets[setIdx];
+    if (!set || !set.log.length) return null;
+    return set.log.pop();
+}
+function matchParticipants(match) {
+    const s = new Set();
+    match.sets.forEach(set => {
+        if (set.lineup) { for (let i = 1; i <= 6; i++) if (set.lineup.slots[i]) s.add(set.lineup.slots[i]); if (set.lineup.libero) s.add(set.lineup.libero); }
+        set.log.forEach(e => { if (e.k === 'ev' && e.p) s.add(e.p); if (e.k === 'sub') { s.add(e.inP); s.add(e.outP); } });
+    });
+    return s;
+}
+
+/* ===== 正字紀錄表資料（與 v5 同樣的欄位；資料來自事件流） ===== */
+function sheetCounts(match) {
+    const byPlayer = {}, team = [], timelines = [], scores = [];
+    const blank = () => ({ score: {}, loss: {} });
+    match.sets.forEach((set, i) => {
+        const st = replaySet(set, match);
+        team[i] = { oppErr: 0, oppGood: 0 };
+        timelines[i] = setTimeline(st);
+        scores[i] = st.score;
+        st.rallies.forEach(r => {
+            const ev = r.end, cell = sheetCell(ev);
+            if (!cell) return;
+            if (cell.side === 'team') { team[i][cell.key === '對方失誤' ? 'oppErr' : 'oppGood']++; return; }
+            if (!ev.p) return;
+            if (!byPlayer[ev.p]) byPlayer[ev.p] = match.sets.map(blank);
+            const bucket = byPlayer[ev.p][i][cell.side];
+            bucket[cell.key] = (bucket[cell.key] || 0) + 1;
+        });
+    });
+    return { byPlayer, team, timelines, scores };
+}
+
+/* ===== STATS：統計公式（畫面上的「?」說明也讀這張表） ===== */
+const STAT_DEFS = [
+    { key: 'attackPt', label: '攻擊得分', formula: '攻擊得分 ＋ 吊球得分', needs: '第 1 層（賽中必記）' },
+    { key: 'attackErr', label: '攻擊失誤', formula: '攻擊失分 ＋ 吊球失分', needs: '第 1 層' },
+    { key: 'attackTotal', label: '攻擊總數', formula: '得分 ＋ 失誤 ＋ 被守起（賽中「攻擊被守起」＋覆盤補記）', needs: '第 2 層' },
+    { key: 'attackRate', label: '攻擊成功率', formula: '得分 ÷ 攻擊總數；整場沒有任何被守起紀錄時會偏高', needs: '第 2 層' },
+    { key: 'attackEff', label: '攻擊效率', formula: '（得分 − 失誤）÷ 攻擊總數', needs: '第 2 層' },
+    { key: 'servePt', label: '發球得分', formula: '發球得分次數', needs: '第 1 層' },
+    { key: 'serveErr', label: '發球失誤', formula: '發球失分次數', needs: '第 1 層' },
+    { key: 'serveTotal', label: '發球總數', formula: '我方發球的球中，發球者是此人的次數（由輪轉推算）', needs: '需要先發陣容；沒有則顯示「—」' },
+    { key: 'serveRate', label: '發球成功率', formula: '1 − 失誤 ÷ 發球總數；ACE 率 = 得分 ÷ 發球總數', needs: '同上' },
+    { key: 'blockPt', label: '攔網得分／失誤', formula: '攔網得分次數／攔網失分次數', needs: '第 1 層' },
+    { key: 'receiveRate', label: '接發到位率', formula: '到位 ÷（到位 ＋ 不到位 ＋ 失誤）；只計已覆盤的球', needs: '第 3 層（逐球覆盤）' },
+    { key: 'digRate', label: '防守起球率', formula: '起球 ÷（起球 ＋ 沒起）；只計已覆盤的球，賽中「防守失分」算沒起', needs: '第 3 層' },
+    { key: 'net', label: '個人得分／失分／淨值', formula: '歸給此人的得分數、失分數、相減', needs: '第 1 層' },
+    { key: 'maxRun', label: '最大連續得分／失分', formula: '由每球的得分方序列算（不跨局）', needs: '第 1 層' }
+];
+function blankStat(pid) {
+    return {
+        pid, pts: 0, loss: 0, net: 0,
+        attack: { pt: 0, err: 0, dug: 0, total: 0, rate: null, eff: null },
+        serve: { pt: 0, err: 0, total: null, rate: null, ace: null },
+        block: { pt: 0, err: 0 },
+        receive: { good: 0, poor: 0, err: 0, total: 0, rate: null },
+        dig: { ok: 0, no: 0, total: 0, rate: null }
+    };
+}
+function finalizeStat(s) {
+    s.net = s.pts - s.loss;
+    const a = s.attack;
+    a.total = a.pt + a.err + a.dug;
+    a.rate = a.total ? a.pt / a.total : null;
+    a.eff = a.total ? (a.pt - a.err) / a.total : null;
+    const v = s.serve;
+    v.rate = v.total ? 1 - v.err / v.total : null;
+    v.ace = v.total ? v.pt / v.total : null;
+    s.receive.total = s.receive.good + s.receive.poor + s.receive.err;
+    s.receive.rate = s.receive.total ? s.receive.good / s.receive.total : null;
+    s.dig.total = s.dig.ok + s.dig.no;
+    s.dig.rate = s.dig.total ? s.dig.ok / s.dig.total : null;
+    return s;
+}
+function addStat(a, b) {
+    a.pts += b.pts; a.loss += b.loss;
+    ['pt', 'err', 'dug'].forEach(k => { a.attack[k] += b.attack[k]; });
+    ['pt', 'err'].forEach(k => { a.serve[k] += b.serve[k]; a.block[k] += b.block[k]; });
+    if (b.serve.total !== null) a.serve.total = (a.serve.total || 0) + b.serve.total;
+    ['good', 'poor', 'err'].forEach(k => { a.receive[k] += b.receive[k]; });
+    ['ok', 'no'].forEach(k => { a.dig[k] += b.dig[k]; });
+    return a;
+}
+function addCount(obj, key) { obj[key] = (obj[key] || 0) + 1; }
+
+// 一場（或其中一局）的完整統計。opts.setIdx = 只算那一局
+function computeMatchStats(match, db, opts) {
+    const only = opts && typeof opts.setIdx === 'number' ? opts.setIdx : null;
+    const review = match.review || {};
+    const players = {};
+    const P = pid => players[pid] || (players[pid] = blankStat(pid));
+    const team = blankStat(null);
+    team.points = { 攻擊: 0, 吊球: 0, 攔網: 0, 發球: 0, 對方失誤: 0 };
+    team.losses = { 發球: 0, 接球: 0, 攻擊: 0, 防守: 0, 二傳: 0, 吊球: 0, 觸網: 0, 攔網: 0, 舉球: 0, 對手好球: 0, 待確認: 0 };
+    let tracked = 0, rallies = 0, pendingCount = 0;
+    const tally = { 欄中: 0, 背: 0, 大砲: 0 };
+    const runs = { us: { n: 0, set: null }, them: { n: 0, set: null } };
+    const setRows = [];
+
+    match.sets.forEach((set, i) => {
+        if (only !== null && i !== only) return;
+        const st = replaySet(set, match);
+        // 進行中這一球已記的「攻擊被守起」也算進攻擊總數
+        st.openRally.forEach(ev => { if (ev.skill === 'attack' && ev.p) { team.attack.dug++; P(ev.p).attack.dug++; } });
+        setRows.push({ no: i + 1, score: st.score, tracked: st.tracked });
+        if (st.tracked) tracked++;
+        TALLY_KEYS.forEach(k => { tally[k] += st.tally[k]; });
+        let cu = 0, ct = 0;
+        st.rallies.forEach(r => {
+            rallies++;
+            if (r.pending) pendingCount++;
+            if (r.winner === 'us') { cu++; ct = 0; if (cu > runs.us.n) runs.us = { n: cu, set: i + 1 }; }
+            else { ct++; cu = 0; if (ct > runs.them.n) runs.them = { n: ct, set: i + 1 }; }
+            if (r.serve === 'us' && r.server) {
+                const ps = P(r.server);
+                ps.serve.total = (ps.serve.total || 0) + 1;
+                team.serve.total = (team.serve.total || 0) + 1;
+            }
+            const rv = review[r.id] || null;
+            r.events.forEach(ev => {
+                const a = findAction(ev);
+                const ps = ev.p ? P(ev.p) : null;
+                if (ev.out === 'cont') {
+                    if (ev.skill === 'attack') { team.attack.dug++; if (ps) ps.attack.dug++; }
+                    return;
+                }
+                if (ev.out === 'pt') {
+                    team.pts++; if (ps) ps.pts++;
+                    if (ev.skill === 'attack') { team.attack.pt++; if (ps) ps.attack.pt++; }
+                    if (ev.skill === 'serve') { team.serve.pt++; if (ps) ps.serve.pt++; }
+                    if (ev.skill === 'block') { team.block.pt++; if (ps) ps.block.pt++; }
+                    if (a && a.col) addCount(team.points, a.col);
+                } else if (ev.out === 'opp_err') {
+                    team.pts++; addCount(team.points, '對方失誤');
+                } else if (ev.out === 'err') {
+                    team.loss++; if (ps) ps.loss++;
+                    if (ev.skill === 'attack') { team.attack.err++; if (ps) ps.attack.err++; }
+                    if (ev.skill === 'serve') { team.serve.err++; if (ps) ps.serve.err++; }
+                    if (ev.skill === 'block') { team.block.err++; if (ps) ps.block.err++; }
+                    if (a && a.col) addCount(team.losses, a.col);
+                } else if (ev.out === 'opp_pt') {
+                    team.loss++;
+                    addCount(team.losses, ev.pending ? '待確認' : '對手好球');
+                }
+            });
+            // 第 3 層：只計已覆盤的球
+            if (rv && rv.reviewed) {
+                (rv.attacksDug || []).forEach(pid => { team.attack.dug++; P(pid).attack.dug++; });
+                const end = r.end;
+                if (rv.receive && rv.receive.p) {
+                    const g = rv.receive.grade;
+                    const k = g === 'good' ? 'good' : g === 'poor' ? 'poor' : 'err';
+                    P(rv.receive.p).receive[k]++; team.receive[k]++;
+                } else if (end.skill === 'receive' && end.out === 'err' && end.p) {
+                    P(end.p).receive.err++; team.receive.err++;
+                }
+                const digs = rv.digs || [];
+                digs.forEach(d => { const k = d.ok ? 'ok' : 'no'; P(d.p).dig[k]++; team.dig[k]++; });
+                if (end.skill === 'dig' && end.out === 'err' && end.p && !digs.some(d => d.p === end.p && !d.ok)) {
+                    P(end.p).dig.no++; team.dig.no++;
+                }
+            }
+        });
+    });
+    Object.values(players).forEach(p => {
+        p.serve.total = tracked ? (p.serve.total || 0) : null;
+        finalizeStat(p);
+    });
+    team.serve.total = tracked ? (team.serve.total || 0) : null;
+    finalizeStat(team);
+    team.attack.noteHigh = team.attack.total > 0 && team.attack.dug === 0;
+    // 球員順序：先照登錄名單，再來才是其他有紀錄的
+    const order = match.roster.map(r => r.playerId).filter(id => players[id]);
+    Object.keys(players).forEach(id => { if (order.indexOf(id) === -1) order.push(id); });
+    return { team, players, order, tracked: tracked > 0, rallies, pendingCount, tally, runs, sets: setRows };
+}
+// 一位球員跨多場的累計；rows 是每場一列
+function computePlayerStats(playerId, matches, db) {
+    const total = blankStat(playerId);
+    const rows = [];
+    matches.forEach(m => {
+        if (!matchParticipants(m).has(playerId)) return;
+        const ms = computeMatchStats(m, db);
+        const ps = ms.players[playerId] || finalizeStat(blankStat(playerId));
+        rows.push({ matchId: m.id, date: m.date, opponent: m.opponent, teamId: m.teamId, stat: ps });
+        addStat(total, ps);
+    });
+    finalizeStat(total);
+    return { pid: playerId, games: rows.length, rows, total };
+}
+// 團隊趨勢：每場一點（依日期排序）。filter: { teamId, seasonId, status }
+function computeTeamTrend(db, filter) {
+    const f = filter || {};
+    const list = Object.values(db.matches).filter(m => {
+        if (f.teamId && m.teamId !== f.teamId) return false;
+        if (f.seasonId) { const t = db.teams[m.teamId]; if (!t || t.seasonId !== f.seasonId) return false; }
+        if (f.status && m.status !== f.status) return false;
+        return true;
+    }).sort((a, b) => String(a.date).localeCompare(String(b.date)) || a.createdAt - b.createdAt);
+    return list.map(m => {
+        const ms = computeMatchStats(m, db), sum = matchSummary(m);
+        return { matchId: m.id, date: m.date, opponent: m.opponent, teamId: m.teamId, setsUs: sum.us, setsThem: sum.them, attackPt: ms.team.attack.pt, errors: ms.team.loss - (ms.team.losses['對手好球'] || 0) - (ms.team.losses['待確認'] || 0) };
+    });
+}
+
+/* ===== 匯出／匯入與合併 ===== */
+function exportDbObject(db) {
+    const o = clone(db);
+    o.exportedAt = Date.now();
+    return o;
+}
+// 單場分享：只帶那一場，加上它用到的球員、隊伍、賽季
+function exportMatchObject(db, matchId) {
+    const m = db.matches[matchId];
+    if (!m) return null;
+    const o = newDb();
+    o.deviceId = db.deviceId;
+    o.settings = clone(db.settings);
+    o.matches[m.id] = clone(m);
+    const pids = matchParticipants(m);
+    m.roster.forEach(r => pids.add(r.playerId));
+    pids.forEach(pid => { if (db.players[pid]) o.players[pid] = clone(db.players[pid]); });
+    const t = db.teams[m.teamId];
+    if (t) {
+        o.teams[t.id] = clone(t);
+        if (db.seasons[t.seasonId]) o.seasons[t.seasonId] = clone(db.seasons[t.seasonId]);
+    }
+    o.exportedAt = Date.now();
+    o.matches_conflict = {};
+    return o;
+}
+function dbIsEmpty(db) {
+    return !['players', 'seasons', 'teams', 'matches'].some(k => Object.keys(db[k]).length);
+}
+// 某一場的紀錄是否「包含」另一份的全部紀錄（只是記得比較多）
+function logExtends(newer, older) {
+    for (let i = 0; i < older.sets.length; i++) {
+        const lb = older.sets[i].log, la = (newer.sets[i] && newer.sets[i].log) || [];
+        if (la.length < lb.length) return false;
+        for (let j = 0; j < lb.length; j++) if (la[j].id !== lb[j].id) return false;
+    }
+    return true;
+}
+const MERGE_KINDS = ['players', 'seasons', 'teams', 'matches'];
+// 只算計畫、不改資料：每個實體 add（本機沒有）／update（匯入的較新）／keep（本機較新）／same
+function planMerge(local, incoming) {
+    const items = [];
+    MERGE_KINDS.forEach(kind => {
+        Object.keys(incoming[kind]).forEach(id => {
+            const a = local[kind][id], b = incoming[kind][id];
+            if (!a) { items.push({ kind, id, action: 'add', conflict: false }); return; }
+            if (a.updatedAt === b.updatedAt) { items.push({ kind, id, action: 'same', conflict: false }); return; }
+            const incomingNewer = b.updatedAt > a.updatedAt;
+            let conflict = false;
+            if (kind === 'matches') conflict = incomingNewer ? !logExtends(b, a) : !logExtends(a, b);
+            items.push({ kind, id, action: incomingNewer ? 'update' : 'keep', conflict });
+        });
+    });
+    const conflictsToAdd = Object.keys(incoming.matches_conflict || {}).filter(cid => !local.matches_conflict[cid]);
+    return { items, conflictsToAdd, adoptSettings: dbIsEmpty(local) };
+}
+function mergeCounts(plan) {
+    const c = {};
+    MERGE_KINDS.forEach(k => { c[k] = { add: 0, update: 0, keep: 0, same: 0, conflict: 0 }; });
+    plan.items.forEach(it => { c[it.kind][it.action]++; if (it.conflict) c[it.kind].conflict++; });
+    return c;
+}
+// 匯入前的預覽文字（使用者看過、確認才寫入）
+function describeMerge(plan, incoming, local) {
+    const c = mergeCounts(plan), parts = [];
+    const push = (n, text) => { if (n) parts.push(text.replace('{n}', n)); };
+    push(c.matches.add, '新增比賽 {n} 場');
+    push(c.matches.update, '更新比賽 {n} 場');
+    push(c.players.add, '新增球員 {n} 位');
+    push(c.players.update, '更新球員 {n} 位');
+    push(c.seasons.add, '新增賽季 {n} 個');
+    push(c.teams.add, '新增隊伍 {n} 支');
+    push(c.teams.update, '更新隊伍 {n} 支');
+    push(c.seasons.update, '更新賽季 {n} 個');
+    const lines = [];
+    const changes = parts.length;
+    if (parts.length) lines.push(parts.join('、'));
+    const keeps = c.matches.keep + c.players.keep + c.seasons.keep + c.teams.keep;
+    if (keeps) lines.push(`本機的版本比較新，略過 ${keeps} 筆。`);
+    plan.items.filter(it => it.conflict).forEach(it => {
+        const m = incoming.matches[it.id];
+        lines.push(`這場比賽兩邊都有改過：vs ${m.opponent}（${it.action === 'update' ? '保留匯入的較新版本' : '保留本機的較新版本'}，另一份會放進暫存區，可在首頁還原）`);
+    });
+    if (plan.conflictsToAdd.length) lines.push(`另外帶入 ${plan.conflictsToAdd.length} 份暫存的衝突版本。`);
+    const noop = !changes && !plan.conflictsToAdd.length && !plan.items.some(it => it.conflict);
+    if (noop) lines.push('這份紀錄檔的內容本機都已經有了，不需要匯入。');
+    return { lines, noop, counts: c };
+}
+function applyMerge(local, incoming, plan) {
+    if (plan.adoptSettings) local.settings = Object.assign(clone(DEFAULT_SETTINGS), clone(incoming.settings));
+    plan.items.forEach(it => {
+        if (it.action === 'same') return;
+        const inc = incoming[it.kind][it.id];
+        if (it.conflict) {
+            const cid = uid('c_');
+            const loser = it.action === 'update' ? local[it.kind][it.id] : inc;
+            local.matches_conflict[cid] = { id: cid, matchId: it.id, at: Date.now(), match: clone(loser) };
+        }
+        if (it.action === 'add' || it.action === 'update') local[it.kind][it.id] = clone(inc);
+    });
+    plan.conflictsToAdd.forEach(cid => { local.matches_conflict[cid] = clone(incoming.matches_conflict[cid]); });
+    return local;
+}
+// 還原暫存區裡被覆蓋的那一份（目前的那份換進暫存區）
+function restoreConflict(db, cid) {
+    const c = db.matches_conflict[cid];
+    if (!c) return false;
+    const cur = db.matches[c.matchId];
+    if (cur) db.matches_conflict[cid] = { id: cid, matchId: c.matchId, at: Date.now(), match: clone(cur) };
+    else delete db.matches_conflict[cid];
+    db.matches[c.matchId] = touch(clone(c.match));
+    return true;
+}
+
+/* ===== SELFTEST ===== */
+function runSelfTests() {
+    const results = [];
+    const T = (name, fn) => {
+        try { fn(); results.push({ name, ok: true }); }
+        catch (e) { results.push({ name, ok: false, error: String(e && e.message || e) }); }
+    };
+    const eq = (a, b, msg) => {
+        if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${msg || ''} 預期 ${JSON.stringify(b)}，實際 ${JSON.stringify(a)}`);
+    };
+    const ok = (c, msg) => { if (!c) throw new Error(msg || '不成立'); };
+    const E = (skill, out, p, det, extra) => Object.assign({ k: 'ev', id: uid('e_'), t: Date.now(), p: p || null, skill, out, det: det || '', pending: false, src: 'live' }, extra || {});
+    const lineup = () => newLineup({ 1: 'X', 2: 'Y', 3: 'Z', 4: 'A', 5: 'B', 6: 'C' }, null);
+    // 5.3 固件：先發 1=X 2=Y 3=Z 4=A 5=B 6=C，我方先發
+    const fixtureSet = () => {
+        const set = emptySet(1);
+        set.firstServe = 'us';
+        set.lineup = lineup();
+        set.log.push(E('attack', 'cont', 'Y', 'spike'));
+        set.log.push(E('attack', 'pt', 'Z', 'spike'));
+        set.log.push(E('team', 'opp_err'));
+        set.log.push(E('attack', 'err', 'A', 'spike'));
+        set.log.push(E('receive', 'err', 'B'));
+        set.log.push(E('attack', 'pt', 'Y', 'spike'));
+        return set;
+    };
+    const fixtureMatch = () => {
+        const m = newMatch({ teamId: 't1', opponent: '測試隊', formatKey: 'bo3', date: '2026-10-19' });
+        m.roster = ['X', 'Y', 'Z', 'A', 'B', 'C'].map(id => ({ playerId: id, name: id, number: '', positions: [] }));
+        m.sets[0] = fixtureSet();
+        return m;
+    };
+
+    T('5.3 固件：比分、輪轉、發球權', () => {
+        const m = fixtureMatch();
+        const st = replaySet(m.sets[0], m);
+        eq(st.score, { us: 3, them: 2 }, '比分');
+        eq(st.rallies.length, 5, '球數');
+        eq(st.rotation.slots[1], 'Y', '新 1 號位');
+        eq(st.server, 'Y', '下一球發球者');
+        eq(st.serving, 'us', '發球權');
+        eq(st.rallies.map(r => r.server), ['X', 'X', 'X', null, null], '每球發球者');
+        eq(st.rallies.map(r => r.serve), ['us', 'us', 'us', 'them', 'them'], '每球發球方');
+        eq(st.onCourt, ['Y', 'Z', 'A', 'B', 'C', 'X'], '輪轉後 1~6 號位');
+    });
+    T('5.3 固件：第 4 球（對方發球、我方失誤）不輪轉', () => {
+        const m = fixtureMatch();
+        m.sets[0].log.pop();
+        const st = replaySet(m.sets[0], m);
+        eq(st.score, { us: 2, them: 2 }, '比分');
+        eq(st.rotation.slots[1], 'X', '1 號位');
+        eq(st.serving, 'them', '發球權');
+    });
+    T('5.3 固件：攻擊統計（Y 2、Z 1、A 1，團隊成功率 50%）', () => {
+        const m = fixtureMatch();
+        const s = computeMatchStats(m, null);
+        eq([s.players.Y.attack.total, s.players.Y.attack.pt, s.players.Y.attack.dug], [2, 1, 1], 'Y');
+        eq(s.players.Z.attack.total, 1, 'Z');
+        eq(s.players.A.attack.total, 1, 'A');
+        eq(s.players.A.attack.err, 1, 'A 失誤');
+        eq([s.team.attack.pt, s.team.attack.total, s.team.attack.rate], [2, 4, 0.5], '團隊');
+        eq(s.team.attack.noteHigh, false, '有被守起不加註');
+    });
+    T('5.3 固件：發球統計（X 3 次、ACE 0、失誤 0）', () => {
+        const s = computeMatchStats(fixtureMatch(), null);
+        eq([s.players.X.serve.total, s.players.X.serve.pt, s.players.X.serve.err], [3, 0, 0], 'X');
+        eq(s.players.X.serve.rate, 1, '發球成功率');
+        eq(s.players.X.serve.ace, 0, 'ACE 率');
+        eq(s.players.Y.serve.total, 0, '有追蹤輪轉：沒發過球是 0，不是「—」');
+    });
+    T('5.3 固件：復原（刪最後一筆）後 2:2、X 回到 1 號位', () => {
+        const m = fixtureMatch();
+        const removed = popLastEntry(m, 0);
+        eq(removed.skill, 'attack', '刪掉的是第 5 球');
+        const st = replaySet(m.sets[0], m);
+        eq(st.score, { us: 2, them: 2 }, '比分');
+        eq(st.rotation.slots[1], 'X', '輪轉回來');
+    });
+    T('cont 事件不改變比分、發球權、輪轉', () => {
+        const set = emptySet(1); set.firstServe = 'them'; set.lineup = lineup();
+        set.log.push(E('attack', 'cont', 'Y', 'spike'));
+        set.log.push(E('attack', 'cont', 'Z', 'spike'));
+        const st = replaySet(set, null);
+        eq(st.score, { us: 0, them: 0 }); eq(st.serving, 'them'); eq(st.rotation.slots[1], 'X');
+        eq(st.openRally.length, 2, '進行中這一球');
+    });
+    T('復原只作用在這一局，空的一局不會跨回上一局', () => {
+        const m = fixtureMatch();
+        eq(popLastEntry(m, 1), null, '第 2 局沒有紀錄');
+        eq(m.sets[0].log.length, 6, '第 1 局不動');
+    });
+    T('復原可以刪除任何類型的最後一筆（換人、輪轉、配球、號位修改）', () => {
+        const m = fixtureMatch();
+        const kinds = [{ k: 'sub', id: uid('e_'), t: 1, outP: 'A', inP: 'N' }, { k: 'rot', id: uid('e_'), t: 1, dir: 1 }, { k: 'tally', id: uid('e_'), t: 1, key: '背' }, { k: 'lineup', id: uid('e_'), t: 1, lineup: lineup() }];
+        kinds.forEach(e => { const n = m.sets[0].log.length; m.sets[0].log.push(e); eq(popLastEntry(m, 0).k, e.k); eq(m.sets[0].log.length, n); });
+    });
+    T('輪轉方向：1←2、2←3、…、6←1；倒轉相反', () => {
+        const l = rotateLineup(lineup(), 1);
+        eq([1, 2, 3, 4, 5, 6].map(i => l.slots[i]), ['Y', 'Z', 'A', 'B', 'C', 'X']);
+        const b = rotateLineup(l, -1);
+        eq([1, 2, 3, 4, 5, 6].map(i => b.slots[i]), ['X', 'Y', 'Z', 'A', 'B', 'C']);
+    });
+    T('手動輪轉事件與換人事件', () => {
+        const set = emptySet(1); set.firstServe = 'us'; set.lineup = newLineup({ 1: 'X', 2: 'Y', 3: 'Z', 4: 'A', 5: 'B', 6: 'C' }, 'L');
+        set.log.push({ k: 'rot', id: 'r1', t: 1, dir: 1 });
+        set.log.push({ k: 'sub', id: 's1', t: 2, outP: 'Y', inP: 'N' });
+        set.log.push({ k: 'sub', id: 's2', t: 3, outP: 'L', inP: 'L2' });
+        const st = replaySet(set, null);
+        eq(st.onCourt, ['N', 'Z', 'A', 'B', 'C', 'X'], '場上');
+        eq(st.subsUsed, 1, '換人次數（自由球員不計）');
+        eq(st.libero, 'L2', '自由球員');
+    });
+    T('局結束：25 分領先 2 分、決勝局 15 分', () => {
+        eq(setWinnerOf({ us: 25, them: 23 }, 25), 'us');
+        eq(setWinnerOf({ us: 25, them: 24 }, 25), null);
+        eq(setWinnerOf({ us: 26, them: 24 }, 25), 'us');
+        eq(setWinnerOf({ us: 24, them: 26 }, 25), 'them');
+        eq(setWinnerOf({ us: 15, them: 13 }, 15), 'us');
+        eq(setWinnerOf({ us: 14, them: 15 }, 15), null);
+    });
+    T('賽制：三局兩勝 / 五局三勝', () => {
+        const m3 = newMatch({ formatKey: 'bo3' }), m5 = newMatch({ formatKey: 'bo5' });
+        eq(m3.sets.length, 3); eq(m3.format.setPoints, [25, 25, 15]);
+        eq(m5.sets.length, 5); eq(m5.format.setPoints, [25, 25, 25, 25, 15]);
+        const sum = matchSummary(m3); eq([sum.us, sum.them, sum.done], [0, 0, false]);
+    });
+    T('沒有先發（lineup:null）：仍由先發球方推得出發球權，沒有發球者', () => {
+        const set = emptySet(1); set.firstServe = 'us';
+        set.log.push(E('attack', 'pt', 'P1', 'spike'));
+        set.log.push(E('attack', 'err', 'P2', 'spike'));
+        set.log.push(E('team', 'opp_pt'));
+        const st = replaySet(set, null);
+        eq(st.rallies.map(r => r.serve), ['us', 'us', 'them']);
+        eq(st.rallies.map(r => r.server), [null, null, null]);
+        eq(st.serving, 'them');
+        eq(st.tracked, false);
+        const m = fixtureMatch(); m.sets[0] = set;
+        eq(computeMatchStats(m, null).players.P1.serve.total, null, '發球總數顯示「—」');
+    });
+    T('連先發球方都跳過：serving 是 null', () => {
+        const set = emptySet(1);
+        set.log.push(E('attack', 'pt', 'P1', 'spike'));
+        const st = replaySet(set, null);
+        eq(st.serving, null); eq(st.rallies[0].serve, null);
+    });
+    T('彈窗過濾：發球／接球只依確定的規則', () => {
+        const ids = (ctx, g) => visibleActions(ctx)[g].map(a => a.id);
+        // 我方發球、有輪轉：只有發球者看得到「發球」
+        ok(ids({ serving: 'us', tracked: true, server: 'X', playerId: 'X', pos: '' }, 'score').indexOf('s_serve') !== -1, '發球者看得到');
+        ok(ids({ serving: 'us', tracked: true, server: 'X', playerId: 'Y', pos: '' }, 'score').indexOf('s_serve') === -1, '非發球者看不到');
+        ok(ids({ serving: 'us', tracked: true, server: 'X', playerId: 'Y', pos: '' }, 'loss').indexOf('l_serve') === -1, '非發球者看不到失分發球');
+        ok(ids({ serving: 'us', tracked: true, server: 'X', playerId: 'Y', pos: '' }, 'loss').indexOf('l_receive') === -1, '我方發球時沒有接球');
+        // 我方發球、不追蹤輪轉：對所有人顯示
+        ok(ids({ serving: 'us', tracked: false, server: null, playerId: 'Y', pos: '' }, 'score').indexOf('s_serve') !== -1, '不追蹤輪轉：全部顯示');
+        // 對方發球：沒有發球、有接球
+        ok(ids({ serving: 'them', tracked: true, server: null, playerId: 'Y', pos: '' }, 'loss').indexOf('l_serve') === -1, '對方發球沒有發球');
+        ok(ids({ serving: 'them', tracked: true, server: null, playerId: 'Y', pos: '' }, 'loss').indexOf('l_receive') !== -1, '對方發球有接球');
+        // serving 未知：全部顯示
+        const all = ids({ serving: null, tracked: false, server: null, playerId: 'Y', pos: '' }, 'loss');
+        ok(all.indexOf('l_serve') !== -1 && all.indexOf('l_receive') !== -1, 'serving 為 null 全部顯示');
+        eq(ids({ serving: 'them', tracked: true, server: null, playerId: 'Y', pos: '' }, 'cont'), ['c_attack']);
+        // 舉球員把「舉球」放前面，但不隱藏
+        const s = ids({ serving: 'them', tracked: true, server: null, playerId: 'Y', pos: 'S' }, 'loss');
+        eq(s[0], 'l_setter'); ok(s.indexOf('l_attack') !== -1, '不隱藏');
+    });
+    T('按鈕 → 事件 → 紀錄表欄位對照（4.5）', () => {
+        const cell = id => { const c = sheetCell(buildEvent(id, 'P')); return c ? `${c.side}/${c.key}` : null; };
+        eq(cell('s_serve'), 'score/發球'); eq(cell('s_attack'), 'score/攻擊'); eq(cell('s_tip'), 'score/吊球'); eq(cell('s_block'), 'score/攔網');
+        eq(cell('t_opp_err'), 'team/對方失誤'); eq(cell('t_opp_pt'), 'team/對手好球');
+        eq(cell('l_serve'), 'loss/發球'); eq(cell('l_receive'), 'loss/接球'); eq(cell('l_attack'), 'loss/攻擊'); eq(cell('l_dig'), 'loss/防守');
+        eq(cell('l_second'), 'loss/二傳'); eq(cell('l_tip'), 'loss/吊球'); eq(cell('l_net'), 'loss/觸網'); eq(cell('l_block'), 'loss/攔網'); eq(cell('l_setter'), 'loss/舉球');
+        eq(cell('t_pending'), null); eq(cell('c_attack'), null);
+        eq(buildEvent('t_opp_err', 'P').p, null, '團隊事件沒有球員');
+        // 攻擊失誤的細項（可選）仍歸在「攻擊」欄
+        eq(sheetCell({ skill: 'attack', out: 'err', det: 'blocked' }), { side: 'loss', key: '攻擊' });
+    });
+    T('正字紀錄表資料與 v5 逐欄一致（模擬一整場）', () => {
+        // v5 的做法：每次點擊直接累加計數；這裡用同一串點擊，對照新的事件流推導結果
+        const script = [
+            ['A', 's_attack'], ['B', 'l_serve'], ['C', 's_serve'], [null, 't_opp_err'], [null, 't_opp_pt'], ['A', 'l_attack'], ['B', 's_block'],
+            [null, 't_pending'], ['C', 'l_receive'], ['A', 's_tip'], ['B', 'l_net'], ['C', 'l_dig'], ['A', 'l_second'], ['B', 'l_setter'], ['C', 'l_block'], ['A', 'l_tip'],
+            ['B', 's_attack'], ['A', 's_attack'], ['A', 's_attack'], ['A', 's_attack'], ['A', 's_attack'], ['A', 's_attack']
+        ];
+        const m = newMatch({ formatKey: 'bo3' });
+        m.roster = ['A', 'B', 'C'].map(id => ({ playerId: id, name: id, number: '', positions: [] }));
+        const v5 = { A: { score: {}, loss: {} }, B: { score: {}, loss: {} }, C: { score: {}, loss: {} } };
+        let oppErr = 0, oppGood = 0, mine = 0, theirs = 0;
+        const v5line = [];
+        script.forEach(([p, id]) => {
+            const a = ACTION_BY_ID[id];
+            m.sets[0].log.push(buildEvent(id, p));
+            if (id === 't_opp_err') { oppErr++; mine++; v5line.push(['me', mine, false]); }
+            else if (id === 't_opp_pt') { oppGood++; theirs++; v5line.push(['opp', theirs, false]); }
+            else if (id === 't_pending') { theirs++; v5line.push(['opp', theirs, true]); }
+            else if (a.group === 'score') { v5[p].score[a.col] = (v5[p].score[a.col] || 0) + 1; mine++; v5line.push(['me', mine, false]); }
+            else { v5[p].loss[a.col] = (v5[p].loss[a.col] || 0) + 1; theirs++; v5line.push(['opp', theirs, false]); }
+        });
+        const sc = sheetCounts(m);
+        ['A', 'B', 'C'].forEach(p => eq(sc.byPlayer[p][0], v5[p], `球員 ${p}`));
+        eq(sc.team[0], { oppErr, oppGood }, '對方失誤／對手好球（待確認不算）');
+        eq(sc.timelines[0].map(t => [t.team, t.val, t.isPending]), v5line, '比分軌跡');
+        eq(sc.scores[0], { us: mine, them: theirs }, '本局比分');
+    });
+    T('待確認：比分軌跡標黃、帶時間；覆盤補原因後算進該球員', () => {
+        const m = newMatch({ formatKey: 'bo3' });
+        const ev = buildEvent('t_pending', null, { ts: '12:03' });
+        m.sets[0].log.push(ev);
+        let sc = sheetCounts(m);
+        eq(sc.timelines[0][0], { team: 'opp', val: 1, isPending: true, timestamp: '12:03' });
+        eq(sc.team[0], { oppErr: 0, oppGood: 0 });
+        eq(Object.keys(sc.byPlayer).length, 0, '沒補的不進任何球員欄');
+        m.review[ev.id] = { reviewed: true, resolve: { p: 'Q', skill: 'attack', det: 'spike' } };
+        sc = sheetCounts(m);
+        eq(sc.byPlayer.Q[0].loss, { 攻擊: 1 }, '補上的球員欄');
+        eq(sc.timelines[0][0].isPending, true, '軌跡仍標黃');
+    });
+    T('統計：發球／攔網／得失分來源／最大連續', () => {
+        const m = newMatch({ formatKey: 'bo3' });
+        const set = m.sets[0]; set.firstServe = 'us'; set.lineup = lineup();
+        set.log.push(E('serve', 'pt', 'X'));
+        set.log.push(E('serve', 'pt', 'X'));
+        set.log.push(E('block', 'pt', 'Z'));
+        set.log.push(E('serve', 'err', 'X'));
+        set.log.push(E('team', 'opp_pt'));
+        set.log.push(E('team', 'opp_pt', null, '', { pending: true }));
+        const s = computeMatchStats(m, null);
+        eq(s.team.points, { 攻擊: 0, 吊球: 0, 攔網: 1, 發球: 2, 對方失誤: 0 }, '得分來源');
+        eq(s.team.losses.發球, 1); eq(s.team.losses.對手好球, 1); eq(s.team.losses.待確認, 1);
+        eq(s.runs.us, { n: 3, set: 1 }); eq(s.runs.them, { n: 3, set: 1 });
+        eq([s.players.X.serve.pt, s.players.X.serve.err, s.players.X.serve.total], [2, 1, 4]);
+        eq(s.players.X.net, 1, '淨值 = 2 − 1');
+        eq(s.pendingCount, 1);
+    });
+    T('統計：沒有任何被守起 → 成功率加註偏高；覆盤補記被守起計入', () => {
+        const m = newMatch({ formatKey: 'bo3' });
+        m.sets[0].log.push(E('attack', 'pt', 'P', 'spike'));
+        let s = computeMatchStats(m, null);
+        eq(s.team.attack.noteHigh, true); eq(s.team.attack.rate, 1);
+        m.review[m.sets[0].log[0].id] = { reviewed: true, attacksDug: ['P'] };
+        s = computeMatchStats(m, null);
+        eq([s.team.attack.dug, s.team.attack.total, s.team.attack.rate], [1, 2, 0.5]); eq(s.team.attack.noteHigh, false);
+    });
+    T('統計：接發／防守只計已覆盤的球', () => {
+        const m = newMatch({ formatKey: 'bo3' });
+        const set = m.sets[0]; set.firstServe = 'them';
+        const e1 = E('receive', 'err', 'R'), e2 = E('attack', 'pt', 'R', 'spike'), e3 = E('dig', 'err', 'D');
+        set.log.push(e1, e2, e3);
+        let s = computeMatchStats(m, null);
+        eq(s.players.R.receive.total, 0, '沒覆盤不計');
+        m.review[e1.id] = { reviewed: true };
+        m.review[e2.id] = { reviewed: true, receive: { p: 'R', grade: 'good' }, digs: [{ p: 'D', type: 'spike', ok: true }] };
+        m.review[e3.id] = { reviewed: true };
+        s = computeMatchStats(m, null);
+        eq([s.players.R.receive.good, s.players.R.receive.err, s.players.R.receive.rate], [1, 1, 0.5], '接發到位率');
+        eq([s.players.D.dig.ok, s.players.D.dig.no, s.players.D.dig.rate], [1, 1, 0.5], '防守起球率');
+    });
+    T('只算某一局的統計', () => {
+        const m = fixtureMatch();
+        m.sets[1].log.push(E('attack', 'pt', 'Z', 'spike'));
+        eq(computeMatchStats(m, null, { setIdx: 1 }).players.Z.attack.pt, 1);
+        eq(computeMatchStats(m, null).players.Z.attack.pt, 2);
+    });
+    T('球員跨場累計、團隊趨勢', () => {
+        const db = newDb();
+        const m1 = fixtureMatch(), m2 = fixtureMatch(); m2.date = '2026-10-26';
+        db.matches[m1.id] = m1; db.matches[m2.id] = m2;
+        const ps = computePlayerStats('Y', [m1, m2], db);
+        eq(ps.games, 2); eq([ps.total.attack.pt, ps.total.attack.total], [2, 4]);
+        const tr = computeTeamTrend(db, { teamId: 't1' });
+        eq(tr.map(r => r.date), ['2026-10-19', '2026-10-26']); eq(tr[0].attackPt, 2);
+        eq(computeTeamTrend(db, { teamId: 'other' }).length, 0);
+    });
+
+    // ---- 資料庫、儲存格式、匯出入 ----
+    const seedDb = () => {
+        const db = newDb();
+        const s = addSeasonTo(db, { name: '114-1', startDate: '2025-09-01' });
+        const [A, B] = teamsOfSeason(db, s.id);
+        const p1 = addPlayerTo(db, { name: '姚承宏', number: '14', positions: ['OH'] });
+        const p2 = addPlayerTo(db, { name: '邱太穎', number: '1', positions: ['S'] });
+        moveMemberIn(db, p1.id, B.id); moveMemberIn(db, p2.id, A.id);
+        const m = fixtureMatch(); m.teamId = A.id; m.roster = [rosterEntry(p1), rosterEntry(p2)];
+        db.matches[m.id] = m;
+        return { db, s, A, B, p1, p2, m };
+    };
+    T('migrate：不是我們的檔案不接受；缺欄位補預設', () => {
+        eq(migrate({ hello: 1 }).ok, false); eq(migrate(null).ok, false); eq(migrate({ schema: 'other', version: 1 }).error, NOT_OURS_MSG);
+        eq(parseDbText('不是 JSON').error, NOT_OURS_MSG);
+        eq(migrate({ schema: APP_SCHEMA, version: 99 }).ok, false);
+        const r = migrate({ schema: APP_SCHEMA, version: 1, players: { p_a: { name: 'x' } } });
+        ok(r.ok && r.db.settings.showTallyRow === true && r.db.teams && r.db.players.p_a.updatedAt === 0 && r.db.players.p_a.id === 'p_a');
+    });
+    T('匯出 → 清空 → 匯入，資料完全相同', () => {
+        const { db } = seedDb();
+        const text = JSON.stringify(exportDbObject(db));
+        const fresh = newDb();
+        const parsed = parseDbText(text);
+        ok(parsed.ok, '解析');
+        const plan = planMerge(fresh, parsed.db);
+        applyMerge(fresh, parsed.db, plan);
+        eq(fresh.players, db.players); eq(fresh.seasons, db.seasons); eq(fresh.teams, db.teams); eq(fresh.matches, db.matches);
+        eq(fresh.settings, db.settings, '本機是空的就帶入設定');
+    });
+    T('匯入同一檔兩次不會重複', () => {
+        const { db } = seedDb();
+        const text = JSON.stringify(exportDbObject(db));
+        const fresh = newDb();
+        for (let i = 0; i < 2; i++) {
+            const parsed = parseDbText(text), plan = planMerge(fresh, parsed.db);
+            const d = describeMerge(plan, parsed.db, fresh);
+            if (i === 1) ok(d.noop, '第二次應該沒有變動');
+            applyMerge(fresh, parsed.db, plan);
+        }
+        eq(Object.keys(fresh.players).length, 2); eq(Object.keys(fresh.matches).length, 1); eq(Object.keys(fresh.matches_conflict).length, 0);
+    });
+    T('合併：只在一邊 → 加入；兩邊都有 → 取較新（整場為單位）', () => {
+        const { db, m } = seedDb();
+        const other = JSON.parse(JSON.stringify(db));
+        // 另一台裝置接著記了一球：紀錄是本機的延伸 → 單純更新，不算衝突
+        const m2 = other.matches[m.id]; m2.sets[0].log.push(E('team', 'opp_err')); touch(m2);
+        const np = addPlayerTo(other, { name: '新人', number: '99' });
+        const plan = planMerge(db, migrate(other).db);
+        const c = mergeCounts(plan);
+        eq([c.matches.update, c.matches.conflict, c.players.add], [1, 0, 1]);
+        applyMerge(db, other, plan);
+        eq(db.matches[m.id].sets[0].log.length, 7); ok(db.players[np.id]); eq(Object.keys(db.matches_conflict).length, 0);
+        eq(describeMerge(plan, other, db).lines[0], '更新比賽 1 場、新增球員 1 位');
+    });
+    T('合併：本機較新就保留本機', () => {
+        const { db, m } = seedDb();
+        const other = JSON.parse(JSON.stringify(db));
+        db.matches[m.id].sets[0].log.push(E('team', 'opp_err')); touch(db.matches[m.id]);
+        const plan = planMerge(db, other);
+        eq(plan.items.find(i => i.kind === 'matches').action, 'keep');
+        applyMerge(db, other, plan);
+        eq(db.matches[m.id].sets[0].log.length, 7);
+    });
+    T('合併：兩邊各記各的（衝突）→ 保留較新、另一份放進暫存，可還原', () => {
+        const { db, m } = seedDb();
+        const other = JSON.parse(JSON.stringify(db));
+        db.matches[m.id].sets[0].log.push(E('team', 'opp_err')); touch(db.matches[m.id]);
+        const o = other.matches[m.id]; o.sets[0].log.push(E('team', 'opp_pt')); o.updatedAt = db.matches[m.id].updatedAt + 1000;
+        const plan = planMerge(db, other);
+        const it = plan.items.find(i => i.kind === 'matches');
+        eq([it.action, it.conflict], ['update', true]);
+        ok(describeMerge(plan, other, db).lines.some(l => l.indexOf('兩邊都有改過') !== -1 && l.indexOf('測試隊') !== -1));
+        applyMerge(db, other, plan);
+        eq(db.matches[m.id].sets[0].log[6].out, 'opp_pt', '保留較新的');
+        const cids = Object.keys(db.matches_conflict); eq(cids.length, 1);
+        ok(restoreConflict(db, cids[0]));
+        eq(db.matches[m.id].sets[0].log[6].out, 'opp_err', '還原後是原本本機那份');
+        eq(db.matches_conflict[cids[0]].match.sets[0].log[6].out, 'opp_pt', '目前這份換進暫存區');
+    });
+    T('單場分享：只帶那一場和用到的球員、隊伍、賽季', () => {
+        const { db, m, p1, p2, A } = seedDb();
+        const x = exportMatchObject(db, m.id);
+        eq(Object.keys(x.matches), [m.id]); ok(x.players[p1.id] && x.players[p2.id]); eq(Object.keys(x.teams), [A.id]); eq(Object.keys(x.seasons).length, 1);
+        ok(parseDbText(JSON.stringify(x)).ok);
+        eq(exportMatchObject(db, 'nope'), null);
+    });
+    T('比賽 status:live 的匯入檔 → 匯入後仍是 live（首頁會出現繼續紀錄）', () => {
+        const { db, m } = seedDb();
+        const x = exportMatchObject(db, m.id), fresh = newDb();
+        applyMerge(fresh, parseDbText(JSON.stringify(x)).db, planMerge(fresh, x));
+        eq(fresh.matches[m.id].status, 'live');
+    });
+    T('touch：updatedAt 嚴格遞增', () => {
+        const o = { updatedAt: Date.now() + 5000 };
+        const a = o.updatedAt; touch(o); ok(o.updatedAt > a);
+    });
+
+    // ---- P2：球員庫與隊伍 ----
+    T('升隊：球員從 B 隊移到 A 隊，ID 不變；同一賽季只在一隊', () => {
+        const { db, A, B, p1 } = seedDb();
+        ok(B.memberIds.indexOf(p1.id) !== -1);
+        const before = db.players[p1.id].id;
+        moveMemberIn(db, p1.id, A.id);
+        eq(db.players[p1.id].id, before); eq(Object.keys(db.players).length, 2);
+        ok(A.memberIds.indexOf(p1.id) !== -1 && B.memberIds.indexOf(p1.id) === -1);
+        eq(playerTeamHistory(db, p1.id).length, 1);
+    });
+    T('升隊後，A 隊舊的預設陣容不會留著已離開的人', () => {
+        const { db, A, B, p1, p2 } = seedDb();
+        B.defaultLineup = newLineup({ 1: p1.id }, null);
+        moveMemberIn(db, p1.id, A.id);
+        eq(B.defaultLineup, null, 'B 隊陣容只有他一個人 → 清空');
+        A.defaultLineup = newLineup({ 1: p2.id, 2: p1.id }, null);
+        removeMemberIn(db, p1.id, A.id);
+        eq(A.defaultLineup.slots, { 1: p2.id });
+    });
+    T('封存的球員不出現在選單，但舊紀錄照常顯示', () => {
+        const { db, p1, m } = seedDb();
+        eq(selectablePlayers(db).length, 2);
+        updatePlayerIn(db, p1.id, { status: 'archived' });
+        eq(selectablePlayers(db).map(p => p.id).indexOf(p1.id), -1);
+        ok(db.players[p1.id], '資料還在');
+        eq(nameOfIn(m, db, p1.id), '姚承宏', '舊紀錄顯示名字');
+        updatePlayerIn(db, p1.id, { status: 'graduated' });
+        eq(selectablePlayers(db).length, 1);
+    });
+    T('改名、換背號：歷史比賽用名單快照顯示當時的名字', () => {
+        const { db, p1, m } = seedDb();
+        updatePlayerIn(db, p1.id, { name: '姚大宏', number: '7' });
+        eq(db.players[p1.id].name, '姚大宏');
+        eq(nameOfIn(m, db, p1.id), '姚承宏');
+        ok(db.players[p1.id].updatedAt > db.players[p1.id].createdAt - 1);
+    });
+    T('新增賽季（複製上一季）：帶兩隊與在隊成員、不帶封存與畢業', () => {
+        const { db, s, A, B, p1, p2 } = seedDb();
+        const p3 = addPlayerTo(db, { name: '學長', number: '3' }); moveMemberIn(db, p3.id, A.id);
+        updatePlayerIn(db, p3.id, { status: 'graduated' });
+        A.defaultLineup = newLineup({ 1: p2.id, 2: p3.id }, null);
+        const ns = copySeasonIn(db, s.id, { name: nextSeasonName(s.name), startDate: '2026-02-01' });
+        eq(ns.name, '114-2');
+        const [nA, nB] = teamsOfSeason(db, ns.id);
+        eq([nA.name, nB.name], ['A隊', 'B隊']);
+        eq(nA.memberIds, [p2.id]); eq(nB.memberIds, [p1.id]);
+        eq(nA.defaultLineup.slots, { 1: p2.id }, '預設陣容只留還在隊上的人');
+        eq(nextSeasonName('114-2'), '115-1');
+    });
+    T('快速匯入：貼上 12 行名單正確建立', () => {
+        const text = ['14 姚承宏 OH', '1 邱太穎 舉球', '#5 李書漢 MB', '6 張靖灝 OPP', '9 涂品宏 自由', '12 黃士綸', '鄭坤澤 3 大砲', '8,邱秉謙,攔中/大砲', '10\t林以丞\tOH', '11 陳宇翔 S', '13 劉品豪 背', '15 王冠廷 L', ''].join('\n');
+        const rows = parseRosterText(text);
+        eq(rows.length, 12); ok(rows.every(r => r.ok));
+        eq([rows[0].number, rows[0].name, rows[0].positions], ['14', '姚承宏', ['OH']]);
+        eq([rows[2].number, rows[2].name, rows[2].positions], ['5', '李書漢', ['MB']]);
+        eq([rows[5].number, rows[5].name, rows[5].positions], ['12', '黃士綸', []]);
+        eq([rows[6].number, rows[6].name, rows[6].positions], ['3', '鄭坤澤', ['OH']]);
+        eq(rows[7].positions, ['MB', 'OH']); eq(rows[12 - 1].positions, ['L']);
+        const db = newDb();
+        const res = applyRosterImport(db, planRosterImport(db, rows), {});
+        eq([res.created, res.merged], [12, 0]); eq(Object.keys(db.players).length, 12);
+        eq(parseRosterText('姚承宏\n14')[1].ok, false, '只有背號看不出是誰');
+    });
+    T('快速匯入：同名同背號 → 預設合併，可選擇新建', () => {
+        const { db } = seedDb();
+        const rows = parseRosterText('14 姚承宏 MB\n14 姚承宏 OH');
+        const plan = planRosterImport(db, rows);
+        ok(plan[0].dupId && plan[1].dupId);
+        const r1 = applyRosterImport(db, plan.slice(0, 1), {});
+        eq([r1.created, r1.merged], [0, 1]); eq(Object.keys(db.players).length, 2); eq(db.players[plan[0].dupId].positions, ['MB']);
+        const r2 = applyRosterImport(db, plan.slice(1), { 2: 'new' });
+        eq([r2.created, r2.merged], [1, 0]); eq(Object.keys(db.players).length, 3);
+    });
+
+    const failed = results.filter(r => !r.ok);
+    return { total: results.length, passed: results.length - failed.length, failed: failed.length, results };
+}
+/* @core-end */
+
+/* ===== LIBS（只在匯出時才延遲載入，鎖版本） ===== */
+const LIBS = {
+    html2canvas: 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+    jspdf: 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+};
+const PAPER_INK = '#111111';
+
+/* ===== UTIL（DOM） ===== */
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const inFrame = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+const downloadsReady = (window.claude && typeof window.claude.use === 'function')
+    ? window.claude.use('downloads').catch(() => null)
+    : Promise.resolve(null);
+const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '') || (/Macintosh/.test(navigator.userAgent || '') && navigator.maxTouchPoints > 1);
+function buzz() { try { if (navigator.vibrate) navigator.vibrate(15); } catch (e) {} }
+function daysAgoText(ts) {
+    if (!ts) return '還沒有匯出過';
+    const d = Math.floor((Date.now() - ts) / 86400000);
+    return d <= 0 ? '今天' : `${d} 天前`;
+}
+function matchScoreText(m) { const s = matchSummary(m); return `${s.us} : ${s.them}`; }
+
+/* ===== STORAGE：IndexedDB 為主，localStorage 備援 ===== */
+const Storage = (() => {
+    const DB_NAME = 'ntuche-volley', STORE_NAME = 'kv', KEY = 'db', LS_KEY = 'ntuche-volley-db';
+    let idbPromise = null;
+    function openIdb() {
+        if (idbPromise) return idbPromise;
+        idbPromise = new Promise((resolve, reject) => {
+            let done = false;
+            const fail = e => { if (!done) { done = true; reject(e); } };
+            const timer = setTimeout(() => fail(new Error('timeout')), 4000);
+            try {
+                const req = indexedDB.open(DB_NAME, 1);
+                req.onupgradeneeded = () => { req.result.createObjectStore(STORE_NAME); };
+                req.onsuccess = () => { if (!done) { done = true; clearTimeout(timer); resolve(req.result); } };
+                req.onerror = () => fail(req.error || new Error('idb error'));
+                req.onblocked = () => fail(new Error('idb blocked'));
+            } catch (e) { fail(e); }
+        });
+        idbPromise.catch(() => { idbPromise = null; });
+        return idbPromise;
+    }
+    async function idbGet() {
+        const d = await openIdb();
+        return new Promise((resolve, reject) => {
+            const r = d.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(KEY);
+            r.onsuccess = () => resolve(r.result || null);
+            r.onerror = () => reject(r.error);
+        });
+    }
+    async function idbPut(wrapper) {
+        const d = await openIdb();
+        return new Promise((resolve, reject) => {
+            const tx = d.transaction(STORE_NAME, 'readwrite');
+            tx.objectStore(STORE_NAME).put(wrapper, KEY);
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(tx.error || new Error('aborted'));
+        });
+    }
+    function lsGet() { try { const v = localStorage.getItem(LS_KEY); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+    function lsPut(wrapper) { try { localStorage.setItem(LS_KEY, JSON.stringify(wrapper)); return true; } catch (e) { return false; } }
+    function lsDel() { try { localStorage.removeItem(LS_KEY); } catch (e) {} }
+    return {
+        // 兩邊都看，取比較新的那份（頁面被關掉時 localStorage 的同步備份可能比 IndexedDB 新）
+        async load() {
+            let a = null, b = lsGet();
+            try { a = await idbGet(); } catch (e) { a = null; }
+            const pick = [a, b].filter(w => w && w.db).sort((x, y) => (y.savedAt || 0) - (x.savedAt || 0))[0];
+            return pick ? pick.db : null;
+        },
+        async save(db) {
+            const w = { savedAt: Date.now(), db };
+            try { await idbPut(w); lsDel(); return true; } catch (e) { /* 改用 localStorage */ }
+            return lsPut(w);
+        },
+        // 頁面要關掉時：同步寫一份 localStorage，IndexedDB 的非同步寫入可能來不及
+        saveSync(db) { lsPut({ savedAt: Date.now(), db }); }
+    };
+})();
+
+/* ===== STORE：唯一狀態；任何修改都透過 commit ===== */
+let DB = newDb();
+const Store = {
+    listeners: [], saveTimer: null, dirty: false, saveError: false, loaded: false,
+    subscribe(fn) { this.listeners.push(fn); },
+    notify() { this.listeners.forEach(fn => fn()); },
+    commit(mutator) {
+        mutator(DB);
+        this.dirty = true;
+        this.notify();
+        clearTimeout(this.saveTimer);
+        this.saveTimer = setTimeout(() => this.flush(), 300);
+    },
+    async flush() {
+        clearTimeout(this.saveTimer);
+        if (!this.dirty || !this.loaded) return;
+        this.dirty = false;
+        const ok = await Storage.save(DB);
+        if (ok === false && !this.saveError) { this.saveError = true; this.notify(); }
+        else if (ok !== false && this.saveError) { this.saveError = false; this.notify(); }
+    },
+    flushSync() { if (this.dirty && this.loaded) Storage.saveSync(DB); this.flush(); }
+};
+const commit = fn => Store.commit(fn);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') Store.flushSync(); });
+window.addEventListener('pagehide', () => Store.flushSync());
+
+/* ===== UI 狀態與路由 ===== */
+const ui = {
+    viewStack: ['tabs'], hist: 0, tab: 'home',
+    fields: {},                    // 表單欄位（data-field）的暫存，重新繪製時不會掉
+    sheet: null, sheetOpenedAt: 0,
+    teams: { sub: 'library', filter: 'active', search: '', seasonId: null },
+    setup: null,                   // 賽前設定（P3）
+    live: { selected: null },      // 賽中紀錄（P3）
+    preview: { matchId: null, fit: true }
+};
+const F = (name, dflt) => (name in ui.fields ? ui.fields[name] : dflt);
+const topView = () => ui.viewStack[ui.viewStack.length - 1];
+function pushView(v) {
+    ui.viewStack.push(v);
+    try { history.pushState({ v }, ''); ui.hist++; } catch (e) { /* file:// 的某些瀏覽器不能 pushState，返回鈕改用畫面上的按鈕 */ }
+    render();
+}
+function backView() {
+    if (ui.viewStack.length <= 1) return;
+    if (ui.hist > 0) history.back();
+    else { ui.viewStack.pop(); render(); }
+}
+window.addEventListener('popstate', () => {
+    if (ui.sheet) { ui.sheet = null; }
+    if (ui.viewStack.length > 1) { ui.viewStack.pop(); ui.hist = Math.max(0, ui.hist - 1); }
+    render();
+});
+function setTab(t) { ui.tab = t; render(); }
+
+/* ===== UI_KIT：彈窗、提示、確認面板（不用 alert / confirm / prompt） ===== */
+const SHEETS = {};     // type → data => ({ title, sub, html })
+function openSheet(type, data) {
+    ui.sheet = Object.assign({ type }, data || {});
+    ui.sheetOpenedAt = Date.now();
+    renderSheet();
+}
+function closeSheet() { ui.sheet = null; renderSheet(); }
+function renderSheet() {
+    const scrim = $('#scrim');
+    if (!ui.sheet) { scrim.hidden = true; $('#sheetBody').innerHTML = ''; return; }
+    const def = SHEETS[ui.sheet.type](ui.sheet);
+    const sheetEl = scrim.querySelector('.sheet');
+    const keep = scrim.hidden ? 0 : sheetEl.scrollTop;
+    $('#sheetTitle').textContent = def.title || '';
+    $('#sheetSub').textContent = def.sub || '';
+    $('#sheetBody').innerHTML = def.html;
+    scrim.hidden = false;
+    sheetEl.scrollTop = keep;
+}
+function askConfirm(message, okLabel, onOk, danger) {
+    openSheet('confirm', { message, okLabel, onOk, danger: danger !== false });
+}
+SHEETS.confirm = d => ({
+    title: '請確認',
+    html: `<p class="confirm-text">${esc(d.message)}</p>
+        <div class="confirm-row"><button class="btn-solid ghost" data-action="sheet-close">取消</button><button class="btn-solid ${d.danger ? 'danger' : 'brand'}" data-action="confirm-ok">${esc(d.okLabel)}</button></div>`
+});
+SHEETS.message = d => ({ title: d.title || '提示', html: `<p class="confirm-text">${esc(d.message)}</p><button class="btn-solid brand block" data-action="sheet-close">知道了</button>` });
+function showMessage(title, message) { openSheet('message', { title, message }); }
+function menuItem(icon, text, sub, action, attrs, extra) {
+    return `<button class="menu-item${extra ? ' ' + extra : ''}" data-action="${action}" ${attrs || ''}><span class="mi-icon">${icon}</span><span>${esc(text)}</span>${sub ? `<span class="mi-sub">${esc(sub)}</span>` : ''}</button>`;
+}
+let gtoastTimer = null;
+function gtoast(text) {
+    const t = $('#gtoast');
+    t.textContent = text; t.hidden = false;
+    clearTimeout(gtoastTimer);
+    gtoastTimer = setTimeout(() => { t.hidden = true; }, 2200);
+}
+function chipsHtml(items, selected, action, attrName) {
+    return items.map(it => `<button type="button" class="chip${selected.indexOf(it.value) !== -1 ? ' on' : ''}" data-action="${action}" data-${attrName || 'v'}="${esc(it.value)}">${esc(it.label)}</button>`).join('');
+}
+function segHtml(items, current, action, attrName) {
+    return `<div class="seg">${items.map(it => `<button type="button" class="${it.value === current ? 'on' : ''}" data-action="${action}" data-${attrName || 'v'}="${esc(it.value)}">${esc(it.label)}</button>`).join('')}</div>`;
+}
+function playerLine(p) { return `<small>${esc(p.number || '–')}</small>${esc(p.name)}`; }
+
+/* ===== 事件委派 ===== */
+const ACT = {};          // 動作名稱 → (el, e) => void
+function runAct(name, el, e) {
+    const fn = ACT[name];
+    if (fn) fn(el, e);
+}
+document.addEventListener('pointerdown', e => {
+    const el = e.target.closest ? e.target.closest('[data-tap]') : null;
+    if (!el || el.disabled || e.button > 0) return;
+    e.preventDefault();
+    buzz();
+    runAct(el.dataset.tap, el, e);
+});
+document.addEventListener('click', e => {
+    if (e.target.id === 'scrim') { closeSheet(); return; }
+    const el = e.target.closest ? e.target.closest('[data-tap],[data-action]') : null;
+    if (!el || el.disabled) return;
+    if (el.dataset.tap) { if (e.detail === 0) runAct(el.dataset.tap, el, e); return; }
+    // 彈窗剛彈出的瞬間不接受點擊，避免打開它的那一下又點到裡面的按鈕
+    if (el.closest('.sheet') && Date.now() - ui.sheetOpenedAt < 220) return;
+    runAct(el.dataset.action, el, e);
+});
+document.addEventListener('input', e => {
+    const t = e.target;
+    if (t && t.dataset && t.dataset.field) ui.fields[t.dataset.field] = t.type === 'checkbox' ? t.checked : t.value;
+    if (t && t.dataset && t.dataset.live) runAct(t.dataset.live, t, e);
+});
+document.addEventListener('change', e => {
+    const t = e.target;
+    if (t && t.dataset && t.dataset.field) ui.fields[t.dataset.field] = t.type === 'checkbox' ? t.checked : t.value;
+});
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && ui.sheet) closeSheet();
+    if (e.key === 'Enter' && e.target && e.target.dataset && e.target.dataset.enter) { e.preventDefault(); runAct(e.target.dataset.enter, e.target, e); }
+});
+ACT['sheet-close'] = () => closeSheet();
+ACT['confirm-ok'] = () => { const fn = ui.sheet && ui.sheet.onOk; closeSheet(); if (fn) fn(); };
+ACT['tab'] = el => setTab(el.dataset.tab);
+
+/* ===== EXPORT：存檔備援鏈、JSON 匯出、匯入＋合併預覽 ===== */
+const scriptLoads = {};
+function loadScript(src) {
+    if (!scriptLoads[src]) {
+        scriptLoads[src] = new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = src; s.async = true;
+            s.onload = resolve;
+            s.onerror = () => { delete scriptLoads[src]; s.remove(); reject(new Error('load failed')); };
+            document.head.appendChild(s);
+        });
+    }
+    return scriptLoads[src];
+}
+// 依序嘗試：分享選單（手機）→ <a download> → claude.ai 的 downloads；回傳 'share'｜'download'｜'claude'｜'cancelled'｜false
+async function saveFile(filename, blob) {
+    if (isMobile && navigator.canShare && navigator.share) {
+        try {
+            const file = new File([blob], filename, { type: blob.type });
+            if (navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: filename }); return 'share'; }
+        } catch (e) {
+            if (e && e.name === 'AbortError') return 'cancelled';
+        }
+    }
+    if (!inFrame) {
+        try {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = filename;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 5000);
+            return 'download';
+        } catch (e) { /* 換下一個 */ }
+    }
+    const dl = await downloadsReady;
+    if (dl) {
+        try { await dl.save({ filename, data: blob }); return 'claude'; }
+        catch (e) { if (e && e.code === 'declined') return 'cancelled'; }
+    }
+    return false;
+}
+function dateForFile() { return dateStr(); }
+async function exportJson(obj, filename, markBackup) {
+    const text = JSON.stringify(obj);
+    const r = await saveFile(filename, new Blob([text], { type: 'application/json' }));
+    if (r === false) { openSheet('jsonText', { filename, text, markBackup }); return; }
+    if (r === 'cancelled') return;
+    if (markBackup) commit(db => { db.lastBackupAt = Date.now(); });
+    gtoast(r === 'download' ? `已下載：${filename}` : '已匯出');
+}
+ACT['export-all'] = () => exportJson(exportDbObject(DB), `化工男排資料_${dateForFile()}.json`, true);
+ACT['export-match'] = el => {
+    const m = DB.matches[el.dataset.id];
+    if (!m) return;
+    closeSheet();
+    exportJson(exportMatchObject(DB, m.id), `化工男排_vs${m.opponent}_${m.date}.json`.replace(/[\\/:*?"<>|\s]+/g, ''), false);
+};
+SHEETS.jsonText = d => ({
+    title: '複製紀錄檔文字',
+    html: `<p class="note">這個畫面不能直接存檔。按「複製」，貼到備忘錄或傳給自己；之後用「貼上文字匯入」就能還原。</p>
+        <textarea class="input-text" id="jsonOut" readonly rows="8">${esc(d.text)}</textarea>
+        <button class="btn-solid brand block" data-action="copy-json">複製</button>`
+});
+ACT['copy-json'] = async () => {
+    const ta = $('#jsonOut');
+    let ok = false;
+    try { await navigator.clipboard.writeText(ta.value); ok = true; } catch (e) {
+        try { ta.focus(); ta.select(); ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+    }
+    if (ok) { if (ui.sheet && ui.sheet.markBackup) commit(db => { db.lastBackupAt = Date.now(); }); gtoast('已複製'); }
+    else gtoast('複製失敗，請長按文字框手動全選複製');
+};
+ACT['import-file'] = () => { const f = $('#fileIn'); f.value = ''; f.click(); };
+$('#fileIn').addEventListener('change', async e => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    let text = '';
+    try { text = await f.text(); } catch (err) { showMessage('無法讀取', '這個檔案讀不出來，請再試一次。'); return; }
+    startImport(text);
+});
+ACT['import-paste'] = () => openSheet('importPaste', {});
+SHEETS.importPaste = () => ({
+    title: '貼上文字匯入',
+    html: `<textarea class="input-text" id="pasteIn" rows="8" placeholder="把紀錄檔的文字貼在這裡" data-field="pasteIn">${esc(F('pasteIn', ''))}</textarea>
+        <button class="btn-solid brand block" data-action="import-paste-go">預覽</button>`
+});
+ACT['import-paste-go'] = () => { const t = ($('#pasteIn') || {}).value || ''; ui.fields.pasteIn = ''; startImport(t); };
+function startImport(text) {
+    const parsed = parseDbText(text);
+    if (!parsed.ok) { showMessage('無法匯入', parsed.error); return; }
+    const plan = planMerge(DB, parsed.db);
+    openSheet('importPreview', { incoming: parsed.db, plan, desc: describeMerge(plan, parsed.db, DB) });
+}
+SHEETS.importPreview = d => ({
+    title: '匯入預覽',
+    html: `<div class="card">${d.desc.lines.map(l => `<div>${esc(l)}</div>`).join('')}</div>
+        <p class="note">確認後才會寫入。匯入同一個檔案兩次不會重複。</p>
+        <div class="confirm-row"><button class="btn-solid ghost" data-action="sheet-close">取消</button><button class="btn-solid brand" data-action="import-apply" ${d.desc.noop ? 'disabled' : ''}>確定匯入</button></div>`
+});
+ACT['import-apply'] = () => {
+    const d = ui.sheet;
+    if (!d || d.type !== 'importPreview') return;
+    commit(db => { applyMerge(db, d.incoming, d.plan); });
+    closeSheet();
+    gtoast('已匯入');
+};
+ACT['restore-conflict'] = el => {
+    askConfirm('還原後，目前這一場的紀錄會換進暫存區。確定要還原嗎？', '還原', () => {
+        commit(db => { restoreConflict(db, el.dataset.id); });
+        gtoast('已還原');
+    }, false);
+};
+ACT['set-theme'] = el => { commit(db => { db.settings.theme = el.dataset.v; }); };
+ACT['toggle-setting'] = el => { commit(db => { db.settings[el.dataset.key] = !db.settings[el.dataset.key]; }); };
+function applyTheme() {
+    const t = DB.settings.theme;
+    if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t;
+    else document.documentElement.removeAttribute('data-theme');
+}
+
+/* ===== VIEW_HOME ===== */
+function liveMatches() {
+    return Object.values(DB.matches).filter(m => m.status === 'live').sort((a, b) => b.updatedAt - a.updatedAt);
+}
+function resumeLine(m) {
+    const sum = matchSummary(m);
+    const i = Math.min(m.curSet, m.sets.length - 1), st = sum.sets[i].state;
+    return `vs ${m.opponent}　第 ${i + 1} 局 ${st.score.us}:${st.score.them}`;
+}
+function viewHome() {
+    const live = liveMatches();
+    const s = DB.settings;
+    const conflicts = Object.values(DB.matches_conflict || {});
+    let h = `<div class="page-inner col gutter">
+        <div class="page-title"><h1>${esc(s.teamTitle)}</h1><p>隊伍管理・賽中紀錄・賽後數據</p></div>
+        ${Store.saveError ? '<div class="banner-warn">這台裝置無法自動儲存，請記得匯出紀錄檔。</div>' : ''}`;
+    live.forEach(m => {
+        h += `<div class="card resume-card"><div class="card-label">比賽還沒結束</div><div class="note">${esc(m.date)}・${esc(resumeLine(m))}</div>
+            <button class="btn-solid brand" data-action="resume-match" data-id="${esc(m.id)}">繼續紀錄</button></div>`;
+    });
+    h += `<button class="btn-solid brand btn-start" data-action="new-match">開新比賽</button>`;
+    h += `<div class="card"><h2>備份與匯入</h2>
+        <div class="note">上次匯出：${esc(daysAgoText(DB.lastBackupAt))}。資料只存在這支手機上，記得定期匯出；匯出的紀錄檔可以在別的裝置匯入後接著用。</div>
+        <button class="btn-solid" data-action="export-all">匯出紀錄檔</button>
+        <div class="row"><button class="btn-solid ghost" style="flex:1" data-action="import-file">匯入紀錄檔</button><button class="btn-solid ghost" style="flex:1" data-action="import-paste">貼上文字匯入</button></div>
+        <dl class="kv"><dt>球員</dt><dd>${Object.keys(DB.players).length} 位</dd><dt>比賽</dt><dd>${Object.keys(DB.matches).length} 場</dd></dl></div>`;
+    if (conflicts.length) {
+        h += `<div class="card"><h2>暫存的衝突版本</h2><div class="note">匯入時兩邊都有改過的比賽，被覆蓋的那一份放在這裡。</div>${conflicts.map(c => `
+            <div class="row"><div style="flex:1;min-width:0"><b>vs ${esc(c.match.opponent)}</b><div class="note">${esc(c.match.date)}</div></div><button class="btn-solid ghost small" data-action="restore-conflict" data-id="${esc(c.id)}">還原</button></div>`).join('')}</div>`;
+    }
+    h += `<div class="card"><h2>設定</h2>
+        <div class="toggle"><span>賽中顯示配球列<span class="note">欄中／背／大砲計數</span></span><button class="${s.showTallyRow ? 'on' : ''}" data-action="toggle-setting" data-key="showTallyRow" aria-label="賽中顯示配球列"></button></div>
+        <div class="toggle"><span>新比賽預設填先發<span class="note">開啟才能自動算發球總數、場上只顯示 7 人</span></span><button class="${s.trackLineupDefault ? 'on' : ''}" data-action="toggle-setting" data-key="trackLineupDefault" aria-label="新比賽預設填先發"></button></div>
+        <div class="field"><span>外觀</span>${segHtml([{ value: 'system', label: '跟隨系統' }, { value: 'light', label: '淺色' }, { value: 'dark', label: '深色' }], s.theme, 'set-theme')}</div></div>`;
+    return h + '</div>';
+}
+ACT['new-match'] = () => { ui.setup = null; setTab('record'); };
+ACT['resume-match'] = el => { if (ACT_resume) ACT_resume(el.dataset.id); };
+let ACT_resume = null;
+
+/* ===== ROUTER：畫面切換與繪製 ===== */
+const TAB_VIEWS = { home: viewHome };
+function renderTabs() {
+    const page = $('#page');
+    const keyNow = ui.tab;
+    const keep = renderTabs.last === keyNow ? page.scrollTop : 0;
+    renderTabs.last = keyNow;
+    const fn = TAB_VIEWS[ui.tab] || (() => '<div class="page-inner col gutter"><div class="empty">這個頁面還在施工中。</div></div>');
+    page.innerHTML = fn();
+    page.scrollTop = keep;
+    document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === ui.tab));
+}
+let RENDERERS = { live: () => {}, preview: () => {} };
+function render() {
+    const v = topView();
+    document.querySelectorAll('.view').forEach(el => el.classList.toggle('active', el.id === v + 'View'));
+    applyTheme();
+    if (v === 'tabs') renderTabs();
+    else if (RENDERERS[v]) RENDERERS[v]();
+    if (ui.sheet) renderSheet();
+}
+Store.subscribe(() => render());
+
+/* ===== VIEW_TEAMS（P1 暫時版：只能新增與列出球員；P2 換成完整的隊伍管理） ===== */
+function viewTeamsMin() {
+    const list = sortPlayers(Object.values(DB.players));
+    return `<div class="page-inner col gutter">
+        <div class="page-title"><h1>球員庫</h1><p>全部球員（不分隊）</p></div>
+        <div class="card"><label>新增球員</label>
+            <div class="row"><input class="input-text" style="flex:0 0 70px" id="npNum" placeholder="背號" inputmode="numeric" autocomplete="off"><input class="input-text" id="npName" placeholder="姓名" autocomplete="off" data-enter="add-player-min"><button class="btn-solid" data-action="add-player-min">新增</button></div>
+            <div class="form-msg" id="npMsg"></div></div>
+        ${list.length ? `<div class="list">${list.map(p => `<div class="list-row"><span class="lr-num">${esc(p.number || '–')}</span><div class="lr-main"><span class="lr-title">${esc(p.name)}</span></div></div>`).join('')}</div>` : '<div class="empty">還沒有球員。</div>'}
+    </div>`;
+}
+ACT['add-player-min'] = () => {
+    const name = $('#npName').value.trim(), number = $('#npNum').value.trim();
+    if (!name) { $('#npMsg').textContent = '請輸入姓名'; return; }
+    commit(db => { addPlayerTo(db, { name, number }); });
+};
+TAB_VIEWS.teams = viewTeamsMin;
+
+/* ===== BOOT：載入資料庫 → migrate → 繪製 ===== */
+(async function boot() {
+    let loaded = null;
+    try { loaded = await Storage.load(); } catch (e) { loaded = null; }
+    if (loaded) {
+        const r = migrate(loaded);
+        if (r.ok) { DB = r.db; Store.loaded = true; }
+        else { showMessage('本機資料讀取失敗', `${r.error}。為了不覆蓋原本的資料，這次不會自動儲存；請先匯出或聯絡維護的人。`); }
+    } else {
+        Store.loaded = true;
+    }
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+    render();
+    if (typeof afterBoot === 'function') afterBoot();
+})();
+</script>
+</body>
+</html>
