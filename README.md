@@ -18,7 +18,7 @@
 - 直接開檔：用瀏覽器打開 `app/index.html`（`file://` 也能用；不會註冊 Service Worker）。
 - 在電腦上用網址開（才有離線與加到主畫面）：在 `app/` 資料夾執行 `python3 -m http.server 8000`，開 `http://localhost:8000/`。
 - 手機：與電腦同一個 Wi‑Fi，開 `http://電腦IP:8000/`（分享選單與螢幕常亮需要 HTTPS，區網版沒有）。
-- 發佈成網址：見 `docs/PROGRESS.md` 的 P7（需要先決定 repo 是否公開）。
+- 網址版：https://kamikormt.github.io/ntuche-volley/（GitHub Pages；合併進 `main` 且動到 `app/` 或 `tests/` 時自動發佈，見 `.github/workflows/pages.yml`）。
 
 ## 參考資料
 
