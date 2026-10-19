@@ -186,7 +186,9 @@
     .score-line .num { font-family: var(--font-score); font-weight: 700; font-size: clamp(32px, 10.5vw, 46px); font-variant-numeric: tabular-nums; min-width: 1.1em; }
     .score-line .colon { font-family: var(--font-score); font-size: clamp(24px, 8vw, 36px); opacity: 0.7; }
     .score-line .side { font-size: 13px; font-weight: 700; opacity: 0.8; }
-    .score-sub { font-size: 11px; opacity: 0.9; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .band-sub { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; font-weight: 700; padding-bottom: 6px; white-space: nowrap; }
+    .band-sub span { overflow: hidden; text-overflow: ellipsis; }
+    #setInfo { opacity: 0.85; flex: 0 0 auto; }
     .hdr-right { display: flex; gap: 6px; }
     .icon-btn { border: 1px solid var(--band-line); background: var(--band-soft); color: var(--on-band); border-radius: 8px; width: 46px; height: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0; font-size: 20px; line-height: 1; }
     .icon-btn small { font-size: 10px; font-weight: 700; }
@@ -216,6 +218,7 @@
     .crow.libero-row { grid-template-columns: 22px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); }
     .crow-label { writing-mode: vertical-rl; text-align: center; font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: 2px; align-self: center; }
     .player-grid { flex: 0 1 auto; display: grid; gap: 6px; grid-auto-rows: clamp(38px, 7.2vh, 56px); grid-auto-rows: clamp(38px, 7.2dvh, 56px); border-radius: 10px; align-content: start; }
+    .player-grid + .team-row { margin-top: auto; }
     .pbtn { border: 1.5px solid var(--chip-line); background: var(--chip); color: var(--ink); border-radius: 8px; font-weight: 700; font-size: 15px; line-height: 1.1; padding: 0 2px; display: flex; align-items: center; justify-content: center; gap: 3px; text-align: center; overflow: hidden; word-break: keep-all; min-height: 0; }
     .pbtn .sn { font-size: 11px; font-weight: 800; color: var(--muted); }
     .pbtn .srv { color: var(--chip-on); font-size: 13px; }
@@ -388,13 +391,13 @@
                     <span class="num" id="oppScore">0</span>
                     <span class="side">對</span>
                 </div>
-                <div class="score-sub" id="hdrSub"></div>
             </div>
             <div class="hdr-right">
                 <button class="icon-btn tap" data-tap="undo" aria-label="復原上一筆">↶<small>復原</small></button>
                 <button class="icon-btn" data-tap="live-menu" aria-label="開啟選單">☰<small>選單</small></button>
             </div>
         </div>
+        <div class="band-sub col gutter"><span id="serveInfo"></span><span id="setInfo"></span></div>
     </header>
     <section class="strip">
         <div class="col gutter"><div class="live-tl" id="liveTl"></div></div>
@@ -2239,16 +2242,16 @@ function lineupEditorHtml() {
         <div class="chips">${chips || '<span class="note">沒有可以選的球員。</span>'}</div>
         ${selPid ? '<button type="button" class="btn-solid ghost small" data-action="le-clear">清除這一格</button>' : ''}`;
 }
-ACT['le-slot'] = el => { ui.le.sel = el.dataset.slot === 'L' ? 'L' : Number(el.dataset.slot); renderSheet(); };
+ACT['le-slot'] = el => { ui.le.sel = el.dataset.slot === 'L' ? 'L' : Number(el.dataset.slot); render(); };
 ACT['le-pick'] = el => {
     const le = ui.le;
     lineupAssign(le.lineup, le.sel, el.dataset.id);
     const nxt = nextEmptySlot(le.lineup, le.sel === 'L' ? 6 : le.sel);
     if (nxt) le.sel = nxt;
     else if (!le.lineup.libero) le.sel = 'L';
-    renderSheet();
+    render();
 };
-ACT['le-clear'] = () => { lineupClear(ui.le.lineup, ui.le.sel); renderSheet(); };
+ACT['le-clear'] = () => { lineupClear(ui.le.lineup, ui.le.sel); render(); };
 
 /* ===== VIEW_TEAMS：隊伍管理（球員庫＋賽季與隊伍） ===== */
 const STATUS_FILTERS = [{ value: 'active', label: '在隊' }, { value: 'graduated', label: '已畢業' }, { value: 'archived', label: '封存' }, { value: 'all', label: '全部' }];
@@ -2520,6 +2523,683 @@ ACT['ri-apply'] = () => {
     });
     closeSheet();
     gtoast(`已建立 ${res.created} 位${res.merged ? `、合併 ${res.merged} 位` : ''}`);
+};
+
+/* ===== VIEW_SETUP：賽前設定（紀錄分頁，一頁完成） ===== */
+function allTeams() {
+    return seasonsSorted(DB).map(s => teamsOfSeason(DB, s.id)).reduce((a, b) => a.concat(b), []);
+}
+function sortedIds(ids) { return sortPlayers(ids.map(id => DB.players[id]).filter(Boolean)).map(p => p.id); }
+function leSetCandidates(ids) {
+    ui.le.candidates = ids;
+    ui.le.lineup = cleanLineup(ui.le.lineup, ids) || newLineup({}, null);
+}
+function setupSetTeam(teamId) {
+    const team = teamId ? DB.teams[teamId] : null;
+    const members = team ? activeMembers(team).map(p => p.id) : [];
+    const su = ui.setup;
+    su.teamId = team ? team.id : null;
+    su.pool = members.slice();
+    su.present = members.slice();
+    leInit(team && team.defaultLineup ? cleanLineup(team.defaultLineup, members) : null, sortedIds(members));
+}
+function initSetup() {
+    const last = Object.values(DB.matches).sort((a, b) => b.createdAt - a.createdAt)[0];
+    const teams = allTeams();
+    const teamId = last && DB.teams[last.teamId] ? last.teamId : (teams[0] ? teams[0].id : null);
+    ui.setup = { teamId: null, pool: [], present: [], track: !!DB.settings.trackLineupDefault, firstServe: null, msg: '' };
+    ui.fields.stOpp = ''; ui.fields.stEvent = last ? last.event : ''; ui.fields.stDate = dateStr();
+    ui.fields.stRecorder = last ? last.recorder : ''; ui.fields.stFormat = 'bo3';
+    setupSetTeam(teamId);
+}
+function resumeCardsHtml() {
+    return liveMatches().map(m => `<div class="card resume-card"><div class="card-label">比賽還沒結束</div><div class="note">${esc(m.date)}・${esc(resumeLine(m))}</div>
+        <button class="btn-solid brand" data-action="resume-match" data-id="${esc(m.id)}">繼續紀錄</button></div>`).join('');
+}
+function viewRecord() {
+    if (!ui.setup) initSetup();
+    const su = ui.setup, teams = allTeams();
+    let h = `<div class="page-inner col gutter"><div class="page-title"><h1>紀錄</h1><p>開新比賽：選隊伍、點名、填先發，一頁完成</p></div>${resumeCardsHtml()}`;
+    if (!teams.length || !Object.keys(DB.players).length) {
+        return h + `<div class="card"><div class="empty">還沒有隊伍或球員，要先建立才能開新比賽。<br>到「隊伍」建立賽季、貼上名單，再回來這裡。</div>
+            <button class="btn-solid brand block" data-action="tab" data-tab="teams">前往隊伍管理</button></div></div>`;
+    }
+    const pool = sortedIds(su.pool);
+    h += `<div class="card"><label for="stTeam">出賽隊伍</label>
+        <select class="input-text" id="stTeam" data-field="stTeam" data-live="st-team">${teams.map(t => `<option value="${esc(t.id)}"${t.id === su.teamId ? ' selected' : ''}>${esc(teamLabel(DB, t.id))}</option>`).join('')}</select></div>
+        <div class="card"><label>今日登錄（點一下切換今天有沒有來）</label>
+        <div class="chips">${pool.map(id => { const p = DB.players[id]; return `<button type="button" class="chip${su.present.indexOf(id) !== -1 ? ' on' : ' dim'}" data-action="st-present" data-id="${esc(id)}"><small>${esc(p.number || '–')}</small>${esc(p.name)}</button>`; }).join('') || '<span class="note">這一隊還沒有成員，可以用下面的按鈕臨時加入。</span>'}</div>
+        <button class="btn-solid ghost small" data-action="st-extra">＋ 臨時加入其他球員（例如 B 隊支援）</button>
+        <div class="note">今天 ${su.present.length} 人</div></div>
+        <div class="card"><div class="field"><span>對手</span><input class="input-text" data-field="stOpp" value="${esc(F('stOpp', ''))}" placeholder="例如：宜大化材" autocomplete="off"></div>
+        <div class="field-row"><div class="field"><span>賽事名稱（可空）</span><input class="input-text" data-field="stEvent" value="${esc(F('stEvent', ''))}" placeholder="例如：系際盃" autocomplete="off"></div>
+        <div class="field"><span>日期</span><input type="date" class="input-text" data-field="stDate" value="${esc(F('stDate', dateStr()))}"></div></div>
+        <div class="field"><span>賽制</span>${segHtml([{ value: 'bo3', label: '三局兩勝' }, { value: 'bo5', label: '五局三勝' }], F('stFormat', 'bo3'), 'st-format')}</div>
+        <div class="field"><span>紀錄者（印在紀錄表右上）</span><input class="input-text" data-field="stRecorder" value="${esc(F('stRecorder', ''))}" autocomplete="off"></div></div>
+        <div class="card"><label>第 1 局先發（可跳過）</label>
+        <div class="toggle"><span>填先發、追蹤輪轉<span class="note">開啟才能自動算發球總數、場上只顯示 7 人；關閉就用全名單格子</span></span><button class="${su.track ? 'on' : ''}" data-action="st-track" aria-label="填先發、追蹤輪轉"></button></div>
+        ${su.track ? lineupEditorHtml() : ''}
+        <div class="field"><span>先發球方</span>${segHtml([{ value: 'us', label: '我方先發球' }, { value: 'them', label: '對方先發球' }, { value: '', label: '先不指定' }], su.firstServe || '', 'st-serve')}
+        ${su.track ? '' : '<div class="note">不填先發也建議選先發球方，發球權才推得出來；選「先不指定」則所有原因按鈕都會顯示。</div>'}</div></div>
+        <div class="form-msg">${esc(su.msg)}</div>
+        <button class="btn-solid brand btn-start" data-action="st-start">開始比賽紀錄</button></div>`;
+    return h;
+}
+TAB_VIEWS.record = viewRecord;
+ACT['st-team'] = el => { setupSetTeam(el.value); render(); };
+ACT['st-present'] = el => {
+    const su = ui.setup, id = el.dataset.id, i = su.present.indexOf(id);
+    if (i === -1) su.present.push(id); else su.present.splice(i, 1);
+    leSetCandidates(sortedIds(su.present));
+    render();
+};
+ACT['st-format'] = el => { ui.fields.stFormat = el.dataset.v; render(); };
+ACT['st-track'] = () => { ui.setup.track = !ui.setup.track; render(); };
+ACT['st-serve'] = el => { ui.setup.firstServe = el.dataset.v || null; render(); };
+ACT['st-extra'] = () => openSheet('setupExtra', {});
+SHEETS.setupExtra = () => {
+    const su = ui.setup;
+    const list = selectablePlayers(DB).filter(p => su.pool.indexOf(p.id) === -1);
+    return {
+        title: '臨時加入其他球員',
+        html: list.length ? `<div class="list">${list.map(p => `<button class="list-row" data-action="st-extra-add" data-id="${esc(p.id)}"><span class="lr-num">${esc(p.number || '–')}</span><span class="lr-main"><span class="lr-title">${esc(p.name)}</span><span class="lr-sub">${esc(playerSubline(p))}</span></span><span class="tagx">＋</span></button>`).join('')}</div>
+            <button class="btn-solid brand block" data-action="sheet-close">完成</button>` : '<div class="empty">沒有其他在隊的球員可以加入。</div>'
+    };
+};
+ACT['st-extra-add'] = el => {
+    const su = ui.setup, id = el.dataset.id;
+    if (su.pool.indexOf(id) === -1) su.pool.push(id);
+    if (su.present.indexOf(id) === -1) su.present.push(id);
+    leSetCandidates(sortedIds(su.present));
+    render();
+};
+ACT['st-start'] = () => {
+    const su = ui.setup;
+    const fail = msg => { su.msg = msg; render(); };
+    if (!su.teamId) return fail('請先選出賽隊伍');
+    if (!su.present.length) return fail('請至少選一位今天有來的球員');
+    let lineup = null;
+    if (su.track) {
+        lineup = ui.le.lineup;
+        const missing = [1, 2, 3, 4, 5, 6].filter(i => !lineup.slots[i]).length;
+        if (missing) return fail(`先發還沒填滿（還差 ${missing} 格）。補滿，或關閉「填先發」`);
+        if (!su.firstServe) return fail('請選先發球方（我方先發球／對方先發球）');
+    }
+    const roster = sortedIds(su.present).map(id => DB.players[id]);
+    const m = newMatch({
+        teamId: su.teamId, opponent: F('stOpp', ''), event: F('stEvent', ''), date: F('stDate', dateStr()) || dateStr(),
+        formatKey: F('stFormat', 'bo3'), roster, recorder: F('stRecorder', ''), lineup, firstServe: su.firstServe
+    });
+    commit(db => { db.matches[m.id] = m; });
+    ui.setup = null;
+    openLive(m.id);
+};
+
+/* ===== VIEW_LIVE：賽中紀錄（手機一屏不捲動） ===== */
+let wakeLock = null;
+async function keepAwake() {
+    try {
+        if ('wakeLock' in navigator && document.visibilityState === 'visible' && !wakeLock) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => { wakeLock = null; });
+        }
+    } catch (e) { wakeLock = null; }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && topView() === 'live') keepAwake(); });
+function liveMatch() { return DB.matches[ui.live.matchId] || null; }
+function timerMs(m) { return m.timer && m.timer.since ? m.timer.ms + (Date.now() - m.timer.since) : (m.timer ? m.timer.ms : 0); }
+function timerStr(m) { return fmtClock(timerMs(m)); }
+function updateTimerBtn() {
+    const m = liveMatch();
+    if (!m) return;
+    const b = $('#timerBtn'), running = !!m.timer.since;
+    b.textContent = `${running ? '⏸' : '▶'} ${timerStr(m)}`;
+    b.classList.toggle('running', running);
+}
+setInterval(() => { if (topView() === 'live') updateTimerBtn(); }, 500);
+ACT['timer-toggle'] = () => {
+    const m = liveMatch();
+    if (!m) return;
+    commit(db => {
+        const mm = db.matches[m.id];
+        mm.timer = mm.timer.since ? { ms: timerMs(mm), since: null } : { ms: mm.timer.ms, since: Date.now() };
+        touch(mm);
+    });
+};
+// 計時器開著時頁面被關掉：兩小時內回來就接著跑，超過就停在最後一次存檔的時間
+function fixTimer(m) {
+    if (m.timer && m.timer.since && Date.now() - m.updatedAt > 2 * 3600 * 1000) {
+        commit(db => { const mm = db.matches[m.id]; mm.timer = { ms: mm.timer.ms + Math.max(0, mm.updatedAt - mm.timer.since), since: null }; touch(mm); });
+    }
+}
+function openLive(id) {
+    const m = DB.matches[id];
+    if (!m) return;
+    fixTimer(m);
+    ui.live = { matchId: id, selected: null };
+    hideToast();
+    if (topView() !== 'live') pushView('live'); else render();
+    keepAwake();
+}
+ACT_resume = id => { closeSheet(); openLive(id); };
+ACT['resume-match'] = el => { closeSheet(); openLive(el.dataset.id); };
+function nameOf(pid) { return nameOfIn(liveMatch(), DB, pid); }
+function posOf(m, pid) {
+    const r = m.roster.find(x => x.playerId === pid);
+    return (r && r.positions[0]) || (DB.players[pid] && DB.players[pid].positions[0]) || '';
+}
+function curState(m) { return replaySet(m.sets[m.curSet], m); }
+function nameClass(n) { return n.length >= 5 ? ' len5' : n.length === 4 ? ' len4' : ''; }
+function playerBtn(m, pid, slot, st) {
+    const n = nameOf(pid);
+    const isServer = st.serving === 'us' && st.server === pid && slot === 1;
+    return `<button class="pbtn tap${nameClass(n)}" data-tap="pick" data-pid="${esc(pid)}" aria-label="${esc(n)}">${slot ? `<span class="sn">${slot}</span>` : ''}<span>${esc(n)}</span>${isServer ? '<span class="srv" aria-label="發球">●</span>' : ''}</button>`;
+}
+function renderLive() {
+    const m = liveMatch();
+    if (!m) { ui.viewStack = ['tabs']; render(); return; }
+    const sum = matchSummary(m), i = Math.min(m.curSet, m.sets.length - 1), cur = sum.sets[i], st = cur.state;
+    $('#setBtn').textContent = `第 ${i + 1} 局 ▾`;
+    $('#myScore').textContent = st.score.us;
+    $('#oppScore').textContent = st.score.them;
+    let sub = '';
+    if (st.serving === 'us') sub = `● 我方發球${st.server ? '：' + nameOf(st.server) : ''}`;
+    else if (st.serving === 'them') sub = '● 對方發球';
+    $('#serveInfo').textContent = sub;
+    $('#setInfo').textContent = `局數 ${sum.us} : ${sum.them}`;
+    updateTimerBtn();
+    // 即時比分軌跡
+    const tl = $('#liveTl'), line = setTimeline(st);
+    tl.innerHTML = line.length ? timelineTable(line, 0, 'tl-live') : `<div class="live-empty">第 ${i + 1} 局還沒有紀錄。點球員，再選做了什麼。</div>`;
+    requestAnimationFrame(() => { tl.scrollLeft = tl.scrollWidth; });
+    // 球員區：有先發 → 場上 7 人；沒有 → 全名單格子（同 v5）
+    let pad = '';
+    if (st.rotation) {
+        const c = st.onCourt;
+        const row = (label, slots) => `<div class="crow"><span class="crow-label">${label}</span>${slots.map(s => c[s - 1] ? playerBtn(m, c[s - 1], s, st) : '<button class="pbtn empty" disabled>空</button>').join('')}</div>`;
+        pad += `<div class="court">${row('前排', [4, 3, 2])}${row('後排', [5, 6, 1])}
+            <div class="crow"><span class="crow-label">自由</span>${st.libero ? playerBtn(m, st.libero, 0, st) : '<button class="pbtn empty" disabled>無自由</button>'}<span></span>
+            <button class="pbtn sub tap" data-tap="sub-open">⇄ 換人<small>${st.subsUsed}/${MAX_SUBS}</small></button></div></div>`;
+    } else {
+        const n = m.roster.length, rows = n <= 5 ? 1 : n <= 10 ? 2 : n <= 15 ? 3 : 4;
+        pad += `<div class="player-grid" style="grid-template-columns:repeat(${Math.max(1, Math.ceil(n / rows))},minmax(0,1fr))" aria-label="這球是誰">${m.roster.map(r => playerBtn(m, r.playerId, 0, st)).join('')}</div>`;
+    }
+    pad += `<div class="team-row"><button class="tmbtn good tap" data-tap="team-act" data-id="t_opp_err">對方失誤</button>
+        <button class="tmbtn bad tap" data-tap="team-act" data-id="t_opp_pt">對手好球</button>
+        <button class="tmbtn pend tap" data-tap="team-act" data-id="t_pending">⚠ 待確認<small>未記到，先記對手得分</small></button></div>`;
+    $('#livePad').innerHTML = pad;
+    const tally = $('#liveTally');
+    tally.hidden = !DB.settings.showTallyRow;
+    tally.innerHTML = `<div class="tally-inner col gutter"><span class="tally-label">配球</span>${TALLY_KEYS.map(k => `<button class="tbtn tap" data-tap="tally" data-key="${k}">${k} <b>${st.tally[k]}</b></button>`).join('')}</div>`;
+}
+RENDERERS.live = renderLive;
+
+/* ----- 提示條（Toast 蓋在軌跡上） ----- */
+let toastTimer = null;
+function showToast(text, tone) {
+    const t = $('#toast');
+    clearTimeout(toastTimer);
+    t.className = 'toast' + (tone ? ' ' + tone : '');
+    t.innerHTML = `<span class="toast-text">${esc(text)}</span>`;
+    t.hidden = false;
+    toastTimer = setTimeout(hideToast, 1800);
+}
+let bannerCb = null;
+function showBanner(text, btnLabel, onBtn) {
+    const t = $('#toast');
+    clearTimeout(toastTimer);
+    bannerCb = onBtn;
+    t.className = 'toast banner';
+    t.innerHTML = `<span class="toast-text">${esc(text)}</span><button class="toast-btn" data-tap="banner-go">${esc(btnLabel)}</button><button class="toast-x" data-tap="banner-x" aria-label="關閉">✕</button>`;
+    t.hidden = false;
+}
+function hideToast() { clearTimeout(toastTimer); $('#toast').hidden = true; bannerCb = null; }
+ACT['banner-go'] = () => { const cb = bannerCb; hideToast(); if (cb) cb(); };
+ACT['banner-x'] = () => hideToast();
+
+/* ----- 記一球 ----- */
+function scoreText(st) { return `${st.score.us}:${st.score.them}`; }
+function toastFor(ev, m, st) {
+    const a = findAction(ev), txt = describeEntry(ev, nameOf);
+    if (a.group === 'cont') return [`${txt}　本球繼續`, 'cont'];
+    const ts = ev.pending && ev.ts ? `（${ev.ts}）` : '';
+    if (a.group === 'score' || ev.out === 'opp_err') return [`＋ ${txt}　${scoreText(st)}`, 'score'];
+    return [`－ ${txt}${ts}　${scoreText(st)}`, 'loss'];
+}
+function recordAction(actionId, pid) {
+    const m = liveMatch();
+    if (!m) return;
+    const i = m.curSet;
+    const wasOver = !!matchSummary(m).sets[i].winner;
+    const ev = buildEvent(actionId, pid, actionId === 't_pending' ? { ts: m.timer.since ? timerStr(m) : null } : null);
+    commit(db => { const mm = db.matches[m.id]; mm.sets[i].log.push(ev); touch(mm); });
+    const m2 = liveMatch(), sum = matchSummary(m2), s = sum.sets[i];
+    if (!wasOver && s.winner) showSetEnd(m2, sum);
+    else { const [t, tone] = toastFor(ev, m2, s.state); showToast(t, tone); }
+}
+ACT['team-act'] = el => recordAction(el.dataset.id, null);
+ACT['tally'] = el => {
+    const m = liveMatch(), i = m.curSet, key = el.dataset.key;
+    commit(db => { const mm = db.matches[m.id]; mm.sets[i].log.push({ k: 'tally', id: uid('e_'), t: Date.now(), key }); touch(mm); });
+    showToast(`配球 ${key}：${curState(liveMatch()).tally[key]}`);
+};
+ACT['undo'] = () => {
+    const m = liveMatch(), i = m.curSet;
+    if (!m.sets[i].log.length) { showToast('這一局沒有可以復原的紀錄'); return; }
+    let removed = null;
+    commit(db => { const mm = db.matches[m.id]; removed = popLastEntry(mm, i); touch(mm); });
+    showToast(`已復原：${describeEntry(removed, nameOf)}`);
+};
+
+/* ----- ② 做了什麼 ----- */
+ACT['pick'] = el => {
+    const m = liveMatch();
+    if (!m) return;
+    ui.live.selected = el.dataset.pid;
+    openSheet('play', { pid: el.dataset.pid });
+};
+SHEETS.play = d => {
+    const m = liveMatch(), st = curState(m), pid = d.pid;
+    const slot = st.onCourt.indexOf(pid) + 1;
+    const where = st.rotation ? (slot ? `（${slot} 號位）` : st.libero === pid ? '（自由）' : '') : '';
+    const vis = visibleActions({ playerId: pid, serving: st.serving, server: st.server, tracked: !!st.rotation, pos: posOf(m, pid) });
+    const sec = (cls, label, list, wide) => `<div class="act-sec ${cls}"><b>${label}</b><div class="act-grid${wide ? ' wide' : ''}">${list.map(a => `<button class="abtn ${cls}${wide ? ' sm' : ''}" data-action="act" data-id="${a.id}" data-pid="${esc(pid)}">${esc(wide ? a.label + '（這球還沒結束）' : a.label)}</button>`).join('')}</div></div>`;
+    return {
+        title: `${nameOf(pid)}${where}`, sub: `我 ${st.score.us}:${st.score.them} 對`,
+        html: `${sec('score', '得分', vis.score)}${sec('loss', '失分', vis.loss)}${sec('cont', '繼續', vis.cont, true)}`
+    };
+};
+ACT['act'] = el => { closeSheet(); recordAction(el.dataset.id, el.dataset.pid); };
+
+/* ----- 換人 ----- */
+ACT['sub-open'] = () => openSheet('sub', { outP: null, inP: null });
+SHEETS.sub = d => {
+    const m = liveMatch(), st = curState(m);
+    const onCourt = st.onCourt.filter(Boolean);
+    const bench = m.roster.map(r => r.playerId).filter(id => onCourt.indexOf(id) === -1 && id !== st.libero);
+    const btn = (id, role) => { const r = m.roster.find(x => x.playerId === id); return `<button class="chip${d[role] === id ? ' on' : ''}" data-action="sub-pick" data-role="${role}" data-id="${esc(id)}"><small>${esc(r ? r.number || '–' : '–')}</small>${esc(nameOf(id))}</button>`; };
+    return {
+        title: '換人', sub: `本局換人 ${st.subsUsed}/${MAX_SUBS}`,
+        html: `${st.subsUsed >= MAX_SUBS ? `<div class="banner-warn">本局換人已經 ${st.subsUsed} 次，超過 ${MAX_SUBS} 次不一定符合賽事規則，但不會擋你。</div>` : ''}
+            <div class="sub-label">① 換下誰（場上 6 人）</div><div class="chips">${onCourt.map(id => btn(id, 'outP')).join('')}</div>
+            <div class="sub-label">② 換上誰（板凳）</div><div class="chips">${bench.map(id => btn(id, 'inP')).join('') || '<span class="note">沒有板凳球員。可以從選單「加入今日球員」。</span>'}</div>
+            <button class="btn-solid brand block" data-action="sub-ok" ${d.outP && d.inP ? '' : 'disabled'}>${d.outP && d.inP ? `確認：${esc(nameOf(d.inP))} 換下 ${esc(nameOf(d.outP))}` : '先選好兩邊'}</button>`
+    };
+};
+ACT['sub-pick'] = el => { ui.sheet[el.dataset.role] = el.dataset.id; renderSheet(); };
+ACT['sub-ok'] = () => {
+    const d = ui.sheet, m = liveMatch(), i = m.curSet;
+    if (!d.outP || !d.inP) return;
+    commit(db => { const mm = db.matches[m.id]; mm.sets[i].log.push({ k: 'sub', id: uid('e_'), t: Date.now(), outP: d.outP, inP: d.inP }); touch(mm); });
+    closeSheet();
+    showToast(`換人：${nameOf(d.inP)} 換下 ${nameOf(d.outP)}　${curState(liveMatch()).subsUsed}/${MAX_SUBS}`);
+};
+
+/* ----- 切換局數／一局結束／下一局先發 ----- */
+ACT['set-menu'] = () => openSheet('setSwitch', {});
+SHEETS.setSwitch = () => {
+    const m = liveMatch(), sum = matchSummary(m);
+    return {
+        title: '切換局數', sub: `vs ${m.opponent}`,
+        html: sum.sets.map((s, i) => {
+            const status = s.winner === 'us' ? '贏' : s.winner === 'them' ? '輸' : s.started ? '進行中' : '未開始';
+            return menuItem(String(i + 1), `第 ${i + 1} 局　${s.score.us} : ${s.score.them}`, status, 'set-go', `data-i="${i}"`, i === m.curSet ? 'current' : '');
+        }).join('')
+    };
+};
+ACT['set-go'] = el => { closeSheet(); enterSet(Number(el.dataset.i)); };
+function enterSet(i) {
+    const m = liveMatch();
+    if (!m) return;
+    hideToast();
+    if (m.curSet !== i) commit(db => { const mm = db.matches[m.id]; mm.curSet = i; touch(mm); });
+    const m2 = liveMatch(), set = m2.sets[i];
+    if (!set.log.length && !set.lineup && !set.firstServe) openSetStart(i);
+}
+function showSetEnd(m, sum) {
+    const i = m.curSet, s = sum.sets[i];
+    const head = `第 ${i + 1} 局結束 ${s.score.us}:${s.score.them}`;
+    if (sum.done || i >= m.sets.length - 1) showBanner(`${head}・比賽 ${sum.us}:${sum.them}`, '看紀錄表', () => openPreview(m.id));
+    else showBanner(head, `進入第 ${i + 2} 局 →`, () => enterSet(i + 1));
+}
+// 下一局先發：預設帶入上一局最後在場的陣容，可調整或跳過；先發球方預設與上一局相反
+function openSetStart(i) {
+    const m = liveMatch(), set = m.sets[i], prev = i > 0 ? replaySet(m.sets[i - 1], m) : null;
+    const carry = set.lineup ? cloneLineup(set.lineup) : (prev ? lineupCarry(prev) : null);
+    const track = set.lineup ? true : (prev ? !!prev.rotation : !!DB.settings.trackLineupDefault);
+    leInit(carry, m.roster.map(r => r.playerId));
+    const pf = prev ? prev.firstServe : null;
+    const firstServe = set.firstServe || (pf ? (pf === 'us' ? 'them' : 'us') : null);
+    openSheet('setStart', { i, track, firstServe, msg: '' });
+}
+SHEETS.setStart = d => ({
+    title: `第 ${d.i + 1} 局先發`, sub: '可跳過',
+    html: `<div class="field"><span>先發球方${d.firstServe ? '（預設與上一局相反）' : ''}</span>${segHtml([{ value: 'us', label: '我方先發球' }, { value: 'them', label: '對方先發球' }, { value: '', label: '先不指定' }], d.firstServe || '', 'ss-serve')}</div>
+        <div class="toggle"><span>填先發、追蹤輪轉<span class="note">關閉就用全名單格子，沒有換人按鈕</span></span><button class="${d.track ? 'on' : ''}" data-action="ss-track" aria-label="填先發、追蹤輪轉"></button></div>
+        ${d.track ? lineupEditorHtml() : ''}
+        <div class="form-msg">${esc(d.msg)}</div>
+        <div class="confirm-row"><button class="btn-solid ghost" data-action="ss-skip">跳過</button><button class="btn-solid brand" data-action="ss-ok">開始這一局</button></div>`
+});
+ACT['ss-serve'] = el => { ui.sheet.firstServe = el.dataset.v || null; renderSheet(); };
+ACT['ss-track'] = () => { ui.sheet.track = !ui.sheet.track; renderSheet(); };
+ACT['ss-skip'] = () => closeSheet();
+ACT['ss-ok'] = () => {
+    const d = ui.sheet, m = liveMatch();
+    if (d.track) {
+        const missing = [1, 2, 3, 4, 5, 6].filter(k => !ui.le.lineup.slots[k]).length;
+        if (missing) { d.msg = `先發還沒填滿（還差 ${missing} 格）。補滿，或關閉「填先發」`; renderSheet(); return; }
+        if (!d.firstServe) { d.msg = '追蹤輪轉需要先發球方'; renderSheet(); return; }
+    }
+    commit(db => { const mm = db.matches[m.id], set = mm.sets[d.i]; set.firstServe = d.firstServe; set.lineup = d.track ? cloneLineup(ui.le.lineup) : null; touch(mm); });
+    closeSheet();
+};
+
+/* ----- ☰ 選單 ----- */
+ACT['live-menu'] = () => openSheet('liveMenu', {});
+SHEETS.liveMenu = () => {
+    const m = liveMatch(), st = curState(m), set = m.sets[m.curSet];
+    let h = menuItem('📋', '檢視紀錄表 / 匯出', '正字表＋比分軌跡', 'open-preview', `data-id="${esc(m.id)}"`);
+    if (st.rotation) {
+        h += `<div class="confirm-row">${menuItem('↺', '輪轉 －1', '', 'rot', 'data-dir="-1"')}${menuItem('↻', '輪轉 ＋1', '', 'rot', 'data-dir="1"')}</div>`;
+        h += menuItem('✏️', '直接編輯目前號位', '', 'edit-lineup');
+    }
+    if (!set.log.length) h += menuItem('🏐', `設定第 ${m.curSet + 1} 局先發`, '', 'open-set-start');
+    h += menuItem('➕', '加入今日球員', `${m.roster.length} 人`, 'add-today-open');
+    h += menuItem('📤', '匯出本場紀錄檔', '.json', 'export-match', `data-id="${esc(m.id)}"`);
+    h += menuItem('🏁', '結束比賽（存檔）', '', 'finish-match', '', 'danger');
+    h += menuItem('⌂', '回首頁（比賽保留）', '', 'leave-live');
+    return { title: '選單', sub: `vs ${m.opponent}`, html: h };
+};
+ACT['open-set-start'] = () => { closeSheet(); openSetStart(liveMatch().curSet); };
+ACT['rot'] = el => {
+    const m = liveMatch(), i = m.curSet, dir = Number(el.dataset.dir);
+    commit(db => { const mm = db.matches[m.id]; mm.sets[i].log.push({ k: 'rot', id: uid('e_'), t: Date.now(), dir }); touch(mm); });
+    closeSheet();
+    showToast(`輪轉 ${dir > 0 ? '＋1' : '－1'}`);
+};
+ACT['edit-lineup'] = () => {
+    const m = liveMatch(), st = curState(m);
+    leInit(st.rotation, m.roster.map(r => r.playerId));
+    openSheet('editLineup', { msg: '' });
+};
+SHEETS.editLineup = d => ({
+    title: '直接編輯目前號位', sub: '5-1',
+    html: `<div class="note">這是「現在」場上的位置；改完之後的輪轉、發球者都從這裡算起。按「復原」可以取消這次修改。</div>${lineupEditorHtml()}<div class="form-msg">${esc(d.msg)}</div>
+        <button class="btn-solid brand block" data-action="edit-lineup-ok">確定</button>`
+});
+ACT['edit-lineup-ok'] = () => {
+    const d = ui.sheet, m = liveMatch(), i = m.curSet, l = ui.le.lineup;
+    const missing = [1, 2, 3, 4, 5, 6].filter(k => !l.slots[k]).length;
+    if (missing) { d.msg = `還差 ${missing} 格沒填`; renderSheet(); return; }
+    commit(db => { const mm = db.matches[m.id]; mm.sets[i].log.push({ k: 'lineup', id: uid('e_'), t: Date.now(), lineup: cloneLineup(l) }); touch(mm); });
+    closeSheet(); showToast('已修改目前號位');
+};
+ACT['add-today-open'] = () => openSheet('addToday', {});
+SHEETS.addToday = () => {
+    const m = liveMatch();
+    const list = selectablePlayers(DB).filter(p => !m.roster.some(r => r.playerId === p.id));
+    return {
+        title: '加入今日球員',
+        html: list.length ? `<div class="list">${list.map(p => `<button class="list-row" data-action="add-today" data-id="${esc(p.id)}"><span class="lr-num">${esc(p.number || '–')}</span><span class="lr-main"><span class="lr-title">${esc(p.name)}</span><span class="lr-sub">${esc(playerSubline(p))}</span></span><span class="tagx">＋</span></button>`).join('')}</div>
+            <button class="btn-solid brand block" data-action="sheet-close">完成</button>` : '<div class="empty">沒有其他在隊的球員可以加入。</div>'
+    };
+};
+ACT['add-today'] = el => {
+    const m = liveMatch(), p = DB.players[el.dataset.id];
+    if (!p) return;
+    commit(db => { const mm = db.matches[m.id]; mm.roster.push(rosterEntry(p)); touch(mm); });
+};
+ACT['finish-match'] = () => {
+    const m = liveMatch();
+    askConfirm('結束後這場比賽會存檔，可以隨時回頭看紀錄表。要結束嗎？', '結束比賽', () => {
+        commit(db => { const mm = db.matches[m.id]; mm.status = 'done'; if (mm.timer.since) mm.timer = { ms: timerMs(mm), since: null }; touch(mm); });
+        ui.viewStack = ['tabs']; ui.tab = 'home'; ui.hist = 0;
+        render();
+        gtoast('比賽已存檔，記得匯出備份');
+    }, false);
+};
+ACT['leave-live'] = () => { closeSheet(); backView(); };
+
+/* ===== SHEET：正字紀錄表（版面沿用 v5；資料來自事件流） ===== */
+// 正字記號：每 5 次一個「正」，筆順 一 → 丨 → 一(右短橫) → 丨(左短豎) → 一(底橫)；線條屬性寫在 SVG 本身，存成圖片時才不會掉
+const ZHENG_STROKES = ['M3 3.5H17', 'M10 3.5V16.5', 'M10 10H15.5', 'M5 10V16.5', 'M2 16.5H18'];
+function zhengGlyph(strokes) {
+    return `<svg class="zg" width="15" height="15" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="${ZHENG_STROKES.slice(0, strokes).join('')}" fill="none" stroke="${PAPER_INK}" stroke-width="2.2" stroke-linecap="square"/></svg>`;
+}
+function zhengTally(n) {
+    if (!n) return '';
+    let html = '';
+    for (let i = 0; i < Math.floor(n / 5); i++) html += zhengGlyph(5);
+    if (n % 5) html += zhengGlyph(n % 5);
+    return `<span class="zg-wrap" title="${n}">${html}</span>`;
+}
+// 流水比分：一欄一球，我方得分寫在「我方」列、對方得分寫在「對方」列；每一行是獨立的一張 table，兩列永遠對齊
+function timelineTable(items, padTo, cls) {
+    const showTs = items.some(t => t.isPending && t.timestamp);
+    let tsRow = '', meRow = '', oppRow = '';
+    items.forEach(t => {
+        if (t.team === 'me') {
+            tsRow += '<td></td>';
+            meRow += `<td class="v-me">${t.val}</td>`;
+            oppRow += '<td></td>';
+        } else {
+            tsRow += `<td>${(t.isPending && t.timestamp) ? t.timestamp : ''}</td>`;
+            meRow += '<td></td>';
+            oppRow += `<td class="v-opp${t.isPending ? ' pending' : ''}">${t.val}</td>`;
+        }
+    });
+    for (let i = items.length; i < padTo; i++) { tsRow += '<td></td>'; meRow += '<td></td>'; oppRow += '<td></td>'; }
+    let html = `<table class="tl-table ${cls}">`;
+    if (showTs) html += `<tr class="tl-ts"><th>時間</th>${tsRow}</tr>`;
+    html += `<tr class="tl-me"><th>我方</th>${meRow}</tr>`;
+    html += `<tr class="tl-opp"><th>對方</th>${oppRow}</tr>`;
+    return html + '</table>';
+}
+function sheetBlockCount(match) { return Math.max(1, Math.ceil(match.sets.length / SETS_PER_SHEET)); }
+// 一張紀錄表（最多 3 局；五局制第 4、5 局另起一張同格式的表）
+function buildSheetHtml(match, block) {
+    const v = s => s.split('').join('<br>');
+    const sc = sheetCounts(match), sum = matchSummary(match);
+    const idx = [0, 1, 2].map(k => block * SETS_PER_SHEET + k);
+    const ids = match.roster.map(r => r.playerId);
+    Object.keys(sc.byPlayer).forEach(id => { if (ids.indexOf(id) === -1) ids.push(id); });
+    const rows = Math.max(1, ids.length);
+    let head1 = '', head2 = '', sub = '';
+    idx.forEach(si => {
+        head1 += `<th colspan="15" class="ss">${si < match.sets.length ? si + 1 : ''}</th>`;
+        head2 += '<th colspan="5" class="ss">得分</th><th colspan="10" class="ls">失分</th>';
+        sub += SCORE_KEYS.map((k, j) => `<th${j === 0 ? ' class="ss"' : ''}>${v(k)}</th>`).join('') + `<th>${v('對方失誤')}</th>`;
+        sub += LOSS_KEYS.map((k, j) => `<th${j === 0 ? ' class="ls"' : ''}>${v(k)}</th>`).join('') + `<th>${v('對手好球')}</th>`;
+    });
+    let body = '';
+    for (let r = 0; r < rows; r++) {
+        const pid = ids[r];
+        body += `<tr><td class="nm">${pid ? esc(nameOfIn(match, DB, pid)) : ''}</td>`;
+        idx.forEach(si => {
+            const per = pid && sc.byPlayer[pid] && sc.byPlayer[pid][si];
+            SCORE_KEYS.forEach((k, j) => { body += `<td${j === 0 ? ' class="ss"' : ''}>${per ? zhengTally(per.score[k]) : ''}</td>`; });
+            if (r === 0) body += `<td rowspan="${rows}" class="tm">${sc.team[si] ? zhengTally(sc.team[si].oppErr) : ''}</td>`;
+            LOSS_KEYS.forEach((k, j) => { body += `<td${j === 0 ? ' class="ls"' : ''}>${per ? zhengTally(per.loss[k]) : ''}</td>`; });
+            if (r === 0) body += `<td rowspan="${rows}" class="tm">${sc.team[si] ? zhengTally(sc.team[si].oppGood) : ''}</td>`;
+        });
+        body += '</tr>';
+    }
+    // 比分軌跡：每局都印出來（像紙本表格），每局至少兩行，右邊是該局比數
+    let tl = '';
+    idx.forEach(si => {
+        if (si >= match.sets.length) return;
+        const line = sc.timelines[si];
+        const nLines = Math.max(2, Math.ceil(line.length / TL_PER_LINE));
+        let lines = '';
+        for (let l = 0; l < nLines; l++) lines += timelineTable(line.slice(l * TL_PER_LINE, (l + 1) * TL_PER_LINE), TL_PER_LINE, 'tl-paper');
+        const score = line.length ? `${sc.scores[si].us} : ${sc.scores[si].them}` : ':';
+        tl += `<div class="tls"><div class="tls-num">${si + 1}</div><div class="tll">${lines}</div><div class="tls-score"><span>比數</span><b>${score}</b></div></div>`;
+    });
+    const [y, mo, d] = String(match.date || '').split('-');
+    const dateZh = y ? `${y} 年 ${Number(mo)} 月 ${Number(d)} 日` : '　　年　　月　　日';
+    const anyRally = sc.timelines.some(t => t.length);
+    const matchScore = anyRally ? `${sum.us} : ${sum.them}` : '';
+    return `<div class="ph"><div>${dateZh}</div><h1>${esc(DB.settings.teamTitle)}比賽紀錄表</h1>
+            <div class="r">對手：${esc(match.opponent)}　比數：<u>${matchScore}</u>　紀錄：<u>${esc(match.recorder)}</u></div></div>
+        <table class="st">
+            <colgroup><col class="c-name">${'<col>'.repeat(45)}</colgroup>
+            <thead>
+                <tr><th rowspan="3">局數<br><br>姓名</th>${head1}</tr>
+                <tr>${head2}</tr>
+                <tr>${sub}</tr>
+            </thead>
+            <tbody>${body}</tbody>
+        </table>
+        <div class="tlc">${tl}</div>`;
+}
+
+/* ===== 預覽 / 匯出 PNG・PDF ===== */
+function setPvMsg(text) { const m = $('#pvMsg'); m.textContent = text; m.hidden = !text; }
+function fitPaper() {
+    const scroll = $('#pvScroll'), cs = getComputedStyle(scroll);
+    const avail = scroll.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    scroll.querySelectorAll('.paper').forEach(p => { p.style.zoom = ui.preview.fit ? String(Math.min(1, avail / 1080)) : '1'; });
+    $('#pvFit').textContent = ui.preview.fit ? '實際大小' : '符合螢幕';
+}
+window.addEventListener('resize', () => { if (topView() === 'preview') fitPaper(); });
+function renderPreview() {
+    const m = DB.matches[ui.preview.matchId];
+    if (!m) { ui.viewStack = ['tabs']; render(); return; }
+    if (renderPreview.shown !== m.id + ':' + m.updatedAt) {
+        let h = '';
+        for (let b = 0; b < sheetBlockCount(m); b++) h += `<div class="paper">${buildSheetHtml(m, b)}</div>`;
+        $('#pvScroll').innerHTML = h;
+        renderPreview.shown = m.id + ':' + m.updatedAt;
+        $('#pvScroll').scrollTop = 0;
+    }
+    $('#pvPrint').hidden = inFrame;
+    $('#pvPdf').hidden = inFrame && !hasDownloads;
+    fitPaper();
+}
+RENDERERS.preview = renderPreview;
+let hasDownloads = false;
+downloadsReady.then(dl => { hasDownloads = !!dl; if (topView() === 'preview') $('#pvPdf').hidden = inFrame && !hasDownloads; });
+function openPreview(id) {
+    closeSheet(); hideToast();
+    ui.preview = { matchId: id, fit: true };
+    renderPreview.shown = null;
+    setPvMsg('');
+    pushView('preview');
+}
+ACT['open-preview'] = el => openPreview(el.dataset.id);
+ACT['pv-back'] = () => backView();
+ACT['pv-fit'] = () => { ui.preview.fit = !ui.preview.fit; fitPaper(); };
+ACT['pv-print'] = () => window.print();
+ACT['pv-png'] = () => exportSheet('png');
+ACT['pv-pdf'] = () => exportSheet('pdf');
+ACT['img-close'] = () => { $('#imgView').hidden = true; $('#imgOut').removeAttribute('src'); };
+function showImage(canvas) {
+    $('#imgOut').src = canvas.toDataURL('image/png');
+    $('#imgView').hidden = false;
+    setPvMsg('');
+}
+async function renderSheetCanvases(match) {
+    await loadScript(LIBS.html2canvas);
+    const host = document.createElement('div');
+    host.style.cssText = 'position:absolute;left:-20000px;top:0;width:1080px;';
+    const papers = [];
+    for (let b = 0; b < sheetBlockCount(match); b++) {
+        const paper = document.createElement('div');
+        paper.className = 'paper export';
+        paper.innerHTML = buildSheetHtml(match, b);
+        host.appendChild(paper); papers.push(paper);
+    }
+    document.body.appendChild(host);
+    try {
+        const out = [];
+        for (const p of papers) out.push(await window.html2canvas(p, { scale: 2, backgroundColor: '#ffffff', logging: false, useCORS: true }));
+        return out;
+    } finally { host.remove(); }
+}
+function stackCanvases(list) {
+    if (list.length === 1) return list[0];
+    const w = Math.max(...list.map(c => c.width)), gap = 24;
+    const h = list.reduce((a, c) => a + c.height, 0) + gap * (list.length - 1);
+    const out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    const g = out.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h);
+    let y = 0;
+    list.forEach(c => { g.drawImage(c, 0, y); y += c.height + gap; });
+    return out;
+}
+function sheetFileBase(m) { return `化工男排紀錄_vs${m.opponent}_${m.date}`.replace(/[\\/:*?"<>|\s]+/g, ''); }
+async function exportSheet(kind) {
+    const m = DB.matches[ui.preview.matchId];
+    if (!m) return;
+    const btns = [$('#pvPng'), $('#pvPdf')];
+    btns.forEach(b => { b.disabled = true; });
+    setPvMsg(kind === 'pdf' ? '正在產生 PDF…' : '正在產生圖片…');
+    try {
+        const canvases = await renderSheetCanvases(m);
+        if (kind === 'png') {
+            const canvas = stackCanvases(canvases);
+            const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+            const r = await saveFile(sheetFileBase(m) + '.png', blob);
+            if (r === false) showImage(canvas);
+            else setPvMsg(r === 'cancelled' ? '已取消存檔' : `已存檔：${sheetFileBase(m)}.png`);
+        } else {
+            await loadScript(LIBS.jspdf);
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+            const pw = 297, ph = 210, mg = 8, iw = pw - 2 * mg, ih = ph - 2 * mg;
+            canvases.forEach((canvas, n) => {
+                if (n) doc.addPage('a4', 'landscape');
+                const ratio = canvas.height / canvas.width;
+                let w = iw, h = iw * ratio;
+                if (h > ih) { h = ih; w = ih / ratio; }
+                doc.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', (pw - w) / 2, mg, w, h);
+            });
+            const r = await saveFile(sheetFileBase(m) + '.pdf', doc.output('blob'));
+            if (r === false) { showImage(stackCanvases(canvases)); setPvMsg('這個畫面不能存 PDF，已改成圖片'); }
+            else setPvMsg(r === 'cancelled' ? '已取消存檔' : `已存檔：${sheetFileBase(m)}.pdf`);
+        }
+    } catch (e) {
+        setPvMsg('產生檔案失敗：網路沒有連上時無法匯出，連上後再試一次');
+    } finally { btns.forEach(b => { b.disabled = false; }); }
+}
+
+/* ===== VIEW_STATS（暫時版）：比賽列表，讓已結束的比賽也能回頭看紀錄表、匯出；完整的歷史與報告在 P4 ===== */
+function viewStats() {
+    const list = Object.values(DB.matches).sort((a, b) => String(b.date).localeCompare(String(a.date)) || b.createdAt - a.createdAt);
+    return `<div class="page-inner col gutter"><div class="page-title"><h1>數據</h1><p>比賽歷史與數據報告會在之後的版本加入；現在先列出全部比賽</p></div>
+        ${list.length ? `<div class="list">${list.map(m => `<button class="list-row" data-action="match-open" data-id="${esc(m.id)}"><span class="lr-main"><span class="lr-title">vs ${esc(m.opponent)}</span><span class="lr-sub">${esc(m.date)}${m.event ? '・' + esc(m.event) : ''}・${esc(teamLabel(DB, m.teamId))}</span></span>
+            <span class="lr-num">${esc(matchScoreText(m))}</span>${m.status === 'live' ? '<span class="tagx">進行中</span>' : ''}</button>`).join('')}</div>` : '<div class="empty">還沒有比賽。</div>'}</div>`;
+}
+TAB_VIEWS.stats = viewStats;
+ACT['match-open'] = el => openSheet('matchActions', { id: el.dataset.id });
+SHEETS.matchActions = d => {
+    const m = DB.matches[d.id];
+    if (!m) return { title: '比賽', html: '' };
+    return {
+        title: `vs ${m.opponent}`, sub: m.date,
+        html: (m.status === 'live' ? menuItem('▶', '繼續紀錄', '', 'resume-match', `data-id="${esc(m.id)}"`) : menuItem('↩', '重新開啟紀錄', '補記或修正', 'reopen-match', `data-id="${esc(m.id)}"`))
+            + menuItem('📋', '紀錄表（PNG／PDF）', '', 'open-preview', `data-id="${esc(m.id)}"`)
+            + menuItem('📤', '匯出這一場的紀錄檔', '.json', 'export-match', `data-id="${esc(m.id)}"`)
+    };
+};
+ACT['reopen-match'] = el => {
+    commit(db => { const mm = db.matches[el.dataset.id]; mm.status = 'live'; touch(mm); });
+    closeSheet(); openLive(el.dataset.id);
+};
+
+/* ===== 啟動後：有進行中的比賽就提示繼續 ===== */
+function afterBoot() {
+    const live = liveMatches().filter(m => Date.now() - m.updatedAt < 12 * 3600 * 1000);
+    if (live.length) openSheet('resumePrompt', { id: live[0].id });
+}
+SHEETS.resumePrompt = d => {
+    const m = DB.matches[d.id];
+    if (!m) return { title: '比賽', html: '' };
+    return {
+        title: '上次的比賽還沒結束',
+        html: `<p class="confirm-text">${esc(m.date)}\n${esc(resumeLine(m))}</p><div class="confirm-row"><button class="btn-solid ghost" data-action="sheet-close">稍後</button><button class="btn-solid brand" data-action="resume-match" data-id="${esc(m.id)}">繼續紀錄</button></div>`
+    };
 };
 
 /* ===== BOOT：載入資料庫 → migrate → 繪製 ===== */
