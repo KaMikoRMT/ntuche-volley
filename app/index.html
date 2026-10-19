@@ -28,6 +28,12 @@
         --loss-team: #6d1a27;
         --loss-text: #a03a40;
         --cont: #8a6d2b;
+        /* 配球位置的分類色（資料視覺化的類別色，依序驗證過色盲辨識；一定搭配文字標籤） */
+        --pos-oh: #2a78d6;
+        --pos-mb: #eb6834;
+        --pos-opp: #1baf7a;
+        --pos-s: #eda100;
+        --pos-none: #a89a90;
         --on-btn: #ffffff;
         --chip: #f6e9e4;
         --chip-line: #dbb7ae;
@@ -63,7 +69,7 @@
             --bg: #1d1816; --surface: #28211e; --ink: #f1e7df; --muted: #a8978b; --line: #3d332e;
             --band: #5e1824; --on-band: #fff3ec;
             --score: #5c7646; --score-team: #445c33; --score-text: #9bbb7c;
-            --loss: #a9474e; --loss-team: #74222f; --loss-text: #ec8c90; --cont: #a88a3c;
+            --loss: #a9474e; --loss-team: #74222f; --loss-text: #ec8c90; --cont: #a88a3c; --pos-oh: #3987e5; --pos-mb: #d95926; --pos-opp: #199e70; --pos-s: #c98500; --pos-none: #8a7d74;
             --chip: #332a27; --chip-line: #54453f; --chip-on: #c4485a;
             --warn: #c99a2a; --pending-bg: #6b5a14; --pending-fg: #ffe680;
             --tally: #3e332e; --scrim: rgba(0, 0, 0, 0.6); --shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
@@ -74,7 +80,7 @@
         --bg: #1d1816; --surface: #28211e; --ink: #f1e7df; --muted: #a8978b; --line: #3d332e;
         --band: #5e1824; --on-band: #fff3ec;
         --score: #5c7646; --score-team: #445c33; --score-text: #9bbb7c;
-        --loss: #a9474e; --loss-team: #74222f; --loss-text: #ec8c90; --cont: #a88a3c;
+        --loss: #a9474e; --loss-team: #74222f; --loss-text: #ec8c90; --cont: #a88a3c; --pos-oh: #3987e5; --pos-mb: #d95926; --pos-opp: #199e70; --pos-s: #c98500; --pos-none: #8a7d74;
         --chip: #332a27; --chip-line: #54453f; --chip-on: #c4485a;
         --warn: #c99a2a; --pending-bg: #6b5a14; --pending-fg: #ffe680;
         --tally: #3e332e; --scrim: rgba(0, 0, 0, 0.6); --shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
@@ -390,11 +396,19 @@
     .rv-sec { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
     .rv-sec > b { font-size: 13px; color: var(--muted); }
     .rv-sec > b small { font-weight: 500; }
-    .rv-grades { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+    .rv-grades { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+    .rv-grades.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .rv-grades button, .rv-two button, .rv-acts button { border: none; border-radius: 8px; min-height: 52px; font-weight: 800; font-size: 16px; color: var(--on-btn); padding: 2px 4px; }
     .rv-grades button.good, .rv-two button.good { background: var(--score); }
-    .rv-grades button.poor { background: var(--cont); }
-    .rv-grades button.err, .rv-two button.bad, .rv-acts button { background: var(--loss); }
+    .rv-grades button.run { background: var(--cont); }
+    .rv-grades button.bad, .rv-two button.bad, .rv-acts button { background: var(--loss); }
+    .rv-grades button.err { background: var(--loss-team); }
+    .chip .pp { font-size: 11px; font-weight: 700; opacity: 0.75; }
+    .posrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 6px; padding-block: 6px; border-top: 1px solid var(--line); }
+    .posrow:first-of-type { border-top: none; }
+    .posrow .pn { flex: 0 0 5.2em; font-weight: 800; font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .posrow .pn small { display: block; font-size: 10px; font-weight: 700; color: var(--cont); }
+    .posrow .chip { min-height: 34px; padding: 0 10px; font-size: 13px; }
     .rv-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
     .rv-acts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     .rv-acts button.opp { background: var(--loss-team); }
@@ -419,6 +433,37 @@
     .rtable th button { border: none; background: transparent; font: inherit; color: inherit; padding: 0; min-height: 28px; white-space: nowrap; }
     .rtable th button.on { color: var(--ink); text-decoration: underline; }
     .rtable td button { border: none; background: transparent; font: inherit; color: inherit; padding: 4px 0; text-align: left; min-height: 32px; }
+    /* 對比條：左成功、右失敗（兩端各一顆百分比標籤）；堆疊條：配球位置、接發品質 */
+    .viz { display: flex; flex-direction: column; gap: 6px; padding-block: 8px; border-top: 1px solid var(--line); }
+    .viz:first-of-type { border-top: none; }
+    .viz-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+    .viz-title { text-align: center; font-size: 14px; font-weight: 800; min-width: 0; }
+    .viz-pill { min-width: 3.6em; text-align: center; padding: 3px 10px; border-radius: 12px; font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; color: var(--on-btn); }
+    .viz-pill.good { background: var(--score); }
+    .viz-pill.bad { background: var(--loss); }
+    .viz-pill.mid { background: var(--cont); }
+    .viz-pill.none { background: var(--chip-line); color: var(--ink); }
+    .viz-bar { display: flex; gap: 2px; height: 18px; border-radius: 9px; overflow: hidden; background: var(--line); }
+    .viz-bar > i { display: block; min-width: 0; font-style: normal; }
+    .viz-bar > i.good { background: var(--score); }
+    .viz-bar > i.mid { background: var(--cont); }
+    .viz-bar > i.bad { background: var(--loss); }
+    .viz-bar > i.err { background: var(--loss-team); }
+    .viz-bar.tall { height: 26px; border-radius: 8px; }
+    .viz-bar.tall > i { display: flex; align-items: center; justify-content: center; color: var(--on-btn); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .viz-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+    .viz-legend { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+    .viz-legend > div { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; font-variant-numeric: tabular-nums; }
+    .viz-legend .sw { width: 12px; height: 12px; border-radius: 3px; }
+    .viz-legend .pct { min-width: 3.6em; text-align: right; font-weight: 800; }
+    .viz-legend > div.zero { color: var(--muted); }
+    .prow { display: grid; grid-template-columns: 5.5em minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 13px; padding-block: 3px; }
+    .prow .nm { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .prow .nm small { color: var(--muted); font-weight: 500; margin-left: 4px; }
+    .prow .viz-bar { height: 14px; border-radius: 7px; }
+    .prow .v { font-variant-numeric: tabular-nums; font-weight: 700; text-align: right; min-width: 6.5em; }
+    .teamsw .note { margin-top: 6px; }
+    .teamsw { position: sticky; top: 0; z-index: 4; padding-block: 8px; background: var(--bg); }
     .def-row { padding-block: 8px; border-top: 1px solid var(--line); }
     .def-row:first-child { border-top: none; }
     .def-row b { display: block; font-size: 14px; }
@@ -478,7 +523,6 @@
         <div class="toast" id="toast" hidden></div>
     </section>
     <main class="pad col gutter" id="livePad"></main>
-    <footer class="tally" id="liveTally"></footer>
 </div>
 
 <!-- ============ 紀錄表預覽 / 匯出 ============ -->
@@ -719,7 +763,8 @@ function nextEmptySlot(l, from) {
     }
     return null;
 }
-function emptySet(no) { return { no, firstServe: null, lineup: null, log: [] }; }
+// positions：這一局開始前確認的位置 { 球員ID: 'OH'|'MB'|'OPP'|'S'|'L' }（有人有雙重位置，配球的「位置」要看他這一局打哪個位置）
+function emptySet(no) { return { no, firstServe: null, lineup: null, positions: {}, log: [] }; }
 function rosterEntry(p) { return { playerId: p.id, name: p.name, number: p.number, positions: (p.positions || []).slice() }; }
 function newMatch(o) {
     const fmt = FORMATS[o.formatKey] || FORMATS.bo3;
@@ -728,6 +773,7 @@ function newMatch(o) {
     for (let i = 0; i < fmt.bestOf; i++) sets.push(emptySet(i + 1));
     sets[0].firstServe = o.firstServe || null;
     sets[0].lineup = cloneLineup(o.lineup);
+    sets[0].positions = o.positions ? clone(o.positions) : {};
     return {
         id: uid('m_'),
         teamId: o.teamId || null,
@@ -772,7 +818,7 @@ function migrate(db) {
     Object.keys(db.matches).forEach(id => {
         const m = db.matches[id];
         if (!Array.isArray(m.sets)) m.sets = [];
-        m.sets.forEach((s, i) => { if (!Array.isArray(s.log)) s.log = []; if (!s.no) s.no = i + 1; if (s.firstServe === undefined) s.firstServe = null; if (s.lineup === undefined) s.lineup = null; });
+        m.sets.forEach((s, i) => { if (!Array.isArray(s.log)) s.log = []; if (!s.no) s.no = i + 1; if (s.firstServe === undefined) s.firstServe = null; if (s.lineup === undefined) s.lineup = null; if (!s.positions || typeof s.positions !== 'object') s.positions = {}; });
         if (!m.review || typeof m.review !== 'object') m.review = {};
         if (!Array.isArray(m.roster)) m.roster = [];
         if (!m.format || !Array.isArray(m.format.setPoints)) m.format = { bestOf: FORMATS.bo3.bestOf, setPoints: FORMATS.bo3.setPoints.slice() };
@@ -1172,8 +1218,11 @@ const STAT_DEFS = [
     { key: 'serveTotal', label: '發球總數', formula: '我方發球的球中，發球者是此人的次數（由輪轉推算）', needs: '需要先發陣容；沒有則顯示「—」' },
     { key: 'serveRate', label: '發球成功率', formula: '1 − 失誤 ÷ 發球總數；ACE 率 = 得分 ÷ 發球總數', needs: '同上' },
     { key: 'blockPt', label: '攔網得分／失誤', formula: '攔網得分次數／攔網失分次數', needs: '第 1 層' },
-    { key: 'receiveRate', label: '接發到位率', formula: '到位 ÷（到位 ＋ 不到位 ＋ 失誤）；只計已覆盤的球', needs: '第 3 層（逐球覆盤）' },
+    { key: 'receiveGrade', label: '接發等級', formula: '到位：球到舉球員附近、可以用上手舉球，三點以上進攻選項都用得出來；需要跑動：有接起，但舉球員要明顯移動或離網較遠，進攻選項被縮小；壞球：沒直接失分，但已經組織不了進攻，只能直接處理過網或送高球；失誤：直接失分或球出界', needs: '第 3 層（逐球覆盤）' },
+    { key: 'receiveRate', label: '接發到位率', formula: '到位 ÷（到位 ＋ 需要跑動 ＋ 壞球 ＋ 失誤）；只計已覆盤的球，賽中「接球失分」算失誤。舊版的「不到位」算在「需要跑動」', needs: '第 3 層（逐球覆盤）' },
     { key: 'digRate', label: '防守起球率', formula: '起球 ÷（起球 ＋ 沒起）；只計已覆盤的球，賽中「防守失分」算沒起', needs: '第 3 層' },
+    { key: 'digGrade', label: '起球品質', formula: '起球之後再分到位／需要跑動／壞球（定義同接發）；起球到位率 = 到位 ÷ 有分級的起球', needs: '第 3 層' },
+    { key: 'dist', label: '配球', formula: '覆盤時記「這一球舉給誰」。配給誰 = 被配球的球員；配給哪個位置 = 他「那一局」的位置（局開始前確認，有雙重位置的人以確認的為準）。百分比 = 該位置（或該球員）的配球數 ÷ 全部配球數', needs: '第 3 層，且要記配球' },
     { key: 'net', label: '個人得分／失分／淨值', formula: '歸給此人的得分數、失分數、相減', needs: '第 1 層' },
     { key: 'maxRun', label: '最大連續得分／失分', formula: '由每球的得分方序列算（不跨局）', needs: '第 1 層' }
 ];
@@ -1183,10 +1232,14 @@ function blankStat(pid) {
         attack: { pt: 0, err: 0, dug: 0, total: 0, rate: null, eff: null },
         serve: { pt: 0, err: 0, total: null, rate: null, ace: null },
         block: { pt: 0, err: 0 },
-        receive: { good: 0, poor: 0, err: 0, total: 0, rate: null },
-        dig: { ok: 0, no: 0, total: 0, rate: null }
+        receive: { good: 0, run: 0, bad: 0, err: 0, total: 0, rate: null },
+        dig: { ok: 0, no: 0, good: 0, run: 0, bad: 0, total: 0, rate: null, goodRate: null },
+        setTo: 0
     };
 }
+// 接發的等級：到位／需要跑動／壞球／失誤（直接失分）。舊版的「不到位」（poor）視為「需要跑動」
+function normGrade(g) { return g === 'good' ? 'good' : g === 'run' || g === 'poor' ? 'run' : g === 'bad' ? 'bad' : 'err'; }
+function normQuality(q) { return q === 'good' || q === 'run' || q === 'bad' ? q : ''; }
 function finalizeStat(s) {
     s.net = s.pts - s.loss;
     const a = s.attack;
@@ -1196,10 +1249,12 @@ function finalizeStat(s) {
     const v = s.serve;
     v.rate = v.total ? 1 - v.err / v.total : null;
     v.ace = v.total ? v.pt / v.total : null;
-    s.receive.total = s.receive.good + s.receive.poor + s.receive.err;
+    s.receive.total = s.receive.good + s.receive.run + s.receive.bad + s.receive.err;
     s.receive.rate = s.receive.total ? s.receive.good / s.receive.total : null;
     s.dig.total = s.dig.ok + s.dig.no;
     s.dig.rate = s.dig.total ? s.dig.ok / s.dig.total : null;
+    const rated = s.dig.good + s.dig.run + s.dig.bad;
+    s.dig.goodRate = rated ? s.dig.good / rated : null;
     return s;
 }
 function addStat(a, b) {
@@ -1207,9 +1262,40 @@ function addStat(a, b) {
     ['pt', 'err', 'dug'].forEach(k => { a.attack[k] += b.attack[k]; });
     ['pt', 'err'].forEach(k => { a.serve[k] += b.serve[k]; a.block[k] += b.block[k]; });
     if (b.serve.total !== null) a.serve.total = (a.serve.total || 0) + b.serve.total;
-    ['good', 'poor', 'err'].forEach(k => { a.receive[k] += b.receive[k]; });
-    ['ok', 'no'].forEach(k => { a.dig[k] += b.dig[k]; });
+    ['good', 'run', 'bad', 'err'].forEach(k => { a.receive[k] += b.receive[k]; });
+    ['ok', 'no', 'good', 'run', 'bad'].forEach(k => { a.dig[k] += b.dig[k]; });
+    a.setTo += b.setTo || 0;
     return a;
+}
+// 配球分佈：依位置、依球員（被配球的人）
+function blankDist() { return { total: 0, byPos: {}, byPlayer: {}, byPlayerPos: {} }; }
+function addDist(a, b) {
+    a.total += b.total;
+    Object.keys(b.byPos).forEach(k => { a.byPos[k] = (a.byPos[k] || 0) + b.byPos[k]; });
+    Object.keys(b.byPlayer).forEach(k => { a.byPlayer[k] = (a.byPlayer[k] || 0) + b.byPlayer[k]; });
+    Object.keys(b.byPlayerPos).forEach(pid => {
+        const t = a.byPlayerPos[pid] || (a.byPlayerPos[pid] = {});
+        Object.keys(b.byPlayerPos[pid]).forEach(k => { t[k] = (t[k] || 0) + b.byPlayerPos[pid][k]; });
+    });
+    return a;
+}
+// 某位球員在「這一局」的位置：局開始前確認的位置 → 名單快照的主位置 → 球員資料的主位置
+function positionOf(match, setIdx, pid, db) {
+    const set = match.sets[setIdx];
+    if (set && set.positions && set.positions[pid]) return set.positions[pid];
+    const r = match.roster.find(x => x.playerId === pid);
+    if (r && r.positions && r.positions[0]) return r.positions[0];
+    const p = db && db.players ? db.players[pid] : null;
+    return (p && p.positions && p.positions[0]) || '';
+}
+// 賽前設定／每局開始時要確認的「本局位置」預設值：上一局確認過的，沒有就用主位置
+function defaultSetPositions(match, db, setIdx) {
+    const out = {}, prev = setIdx > 0 ? match.sets[setIdx - 1].positions : null, cur = match.sets[setIdx] && match.sets[setIdx].positions;
+    match.roster.forEach(r => {
+        const id = r.playerId;
+        out[id] = (cur && cur[id]) || (prev && prev[id]) || positionOf({ sets: [], roster: match.roster }, 0, id, db) || '';
+    });
+    return out;
 }
 function addCount(obj, key) { obj[key] = (obj[key] || 0) + 1; }
 
@@ -1223,7 +1309,8 @@ function computeMatchStats(match, db, opts) {
     team.points = { 攻擊: 0, 吊球: 0, 攔網: 0, 發球: 0, 對方失誤: 0 };
     team.losses = { 發球: 0, 接球: 0, 攻擊: 0, 防守: 0, 二傳: 0, 吊球: 0, 觸網: 0, 攔網: 0, 舉球: 0, 對手好球: 0, 待確認: 0 };
     let tracked = 0, rallies = 0, pendingCount = 0;
-    const tally = { 欄中: 0, 背: 0, 大砲: 0 };
+    const tally = { 欄中: 0, 背: 0, 大砲: 0 };   // 舊版賽中配球列的計數（新版改在覆盤時記配球，見 dist）
+    const dist = blankDist();
     const runs = { us: { n: 0, set: null }, them: { n: 0, set: null } };
     const setRows = [];
 
@@ -1278,14 +1365,24 @@ function computeMatchStats(match, db, opts) {
                 (rv.attacksDug || []).forEach(pid => { team.attack.dug++; P(pid).attack.dug++; });
                 const end = r.end;
                 if (rv.receive && rv.receive.p) {
-                    const g = rv.receive.grade;
-                    const k = g === 'good' ? 'good' : g === 'poor' ? 'poor' : 'err';
+                    const k = normGrade(rv.receive.grade);
                     P(rv.receive.p).receive[k]++; team.receive[k]++;
                 } else if (end.skill === 'receive' && end.out === 'err' && end.p) {
                     P(end.p).receive.err++; team.receive.err++;
                 }
                 const digs = rv.digs || [];
-                digs.forEach(d => { const k = d.ok ? 'ok' : 'no'; P(d.p).dig[k]++; team.dig[k]++; });
+                digs.forEach(d => {
+                    const k = d.ok ? 'ok' : 'no', q = d.ok ? normQuality(d.q) : '';
+                    P(d.p).dig[k]++; team.dig[k]++;
+                    if (q) { P(d.p).dig[q]++; team.dig[q]++; }
+                });
+                // 配球：這一球舉給誰（被配球的人），位置用「那一局」確認的位置
+                (rv.setTo || []).forEach(pid => {
+                    const pos = positionOf(match, i, pid, db);
+                    dist.total++; dist.byPos[pos] = (dist.byPos[pos] || 0) + 1; dist.byPlayer[pid] = (dist.byPlayer[pid] || 0) + 1;
+                    const pp = dist.byPlayerPos[pid] || (dist.byPlayerPos[pid] = {}); pp[pos] = (pp[pos] || 0) + 1;
+                    P(pid).setTo++; team.setTo++;
+                });
                 if (end.skill === 'dig' && end.out === 'err' && end.p && !digs.some(d => d.p === end.p && !d.ok)) {
                     P(end.p).dig.no++; team.dig.no++;
                 }
@@ -1302,7 +1399,7 @@ function computeMatchStats(match, db, opts) {
     // 球員順序：先照登錄名單，再來才是其他有紀錄的
     const order = match.roster.map(r => r.playerId).filter(id => players[id]);
     Object.keys(players).forEach(id => { if (order.indexOf(id) === -1) order.push(id); });
-    return { team, players, order, tracked: tracked > 0, rallies, pendingCount, tally, runs, sets: setRows };
+    return { team, players, order, tracked: tracked > 0, rallies, pendingCount, tally, dist, runs, sets: setRows };
 }
 // 一位球員跨多場的累計；rows 是每場一列
 function computePlayerStats(playerId, matches, db) {
@@ -1473,11 +1570,12 @@ function matchBrief(m, sum) { return { id: m.id, date: m.date, opponent: m.oppon
 function computeAggregate(db, matches) {
     const team = blankStat(null);
     team.points = {}; team.losses = {};
-    const players = {}, perMatch = [], record = { w: 0, l: 0, open: 0 };
+    const players = {}, perMatch = [], record = { w: 0, l: 0, open: 0 }, dist = blankDist();
     let setsUs = 0, setsThem = 0, ptsUs = 0, ptsThem = 0, noteHighMatches = 0, reviewedMatches = 0;
     matches.forEach(m => {
         const ms = computeMatchStats(m, db), sum = matchSummary(m);
         addStat(team, ms.team);
+        addDist(dist, ms.dist);
         ['points', 'losses'].forEach(k => Object.keys(ms.team[k]).forEach(c => { team[k][c] = (team[k][c] || 0) + ms.team[k][c]; }));
         if (sum.done) { if (sum.winner === 'us') record.w++; else record.l++; } else record.open++;
         setsUs += sum.us; setsThem += sum.them;
@@ -1498,7 +1596,7 @@ function computeAggregate(db, matches) {
     finalizeStat(team);
     const list = Object.values(players);
     list.forEach(e => finalizeStat(e.stat));
-    return { n: matches.length, record, setsUs, setsThem, ptsUs, ptsThem, team, players: list, perMatch, noteHighMatches, reviewedMatches };
+    return { n: matches.length, record, setsUs, setsThem, ptsUs, ptsThem, team, players: list, perMatch, noteHighMatches, reviewedMatches, dist };
 }
 // 累計個人表排序：h 是欄位名稱、'games' 或 'name'；沒有資料（null）一律排最後
 function sortAggPlayers(list, h, dir, nameOf) {
@@ -1538,8 +1636,17 @@ function distinctEvents(db) {
 }
 
 /* ===== 覆盤（P5）：覆盤資料另外存在 match.review，不改動 log ===== */
-const DIG_TYPES = [['spike', '接扣'], ['tip', '接吊'], ['cover', 'Cover'], ['free', '接嗆司']];
-const RECEIVE_GRADES = [['good', '到位'], ['poor', '不到位'], ['err', '失誤']];
+// 品質分級（接發與起球共用同一把尺）：
+//   到位：球到舉球員附近、可以用上手舉球，三點以上的進攻選項都用得出來
+//   需要跑動：球有接起、比賽繼續，但舉球員要明顯移動或離網較遠，進攻選項被縮小（例如只剩兩點或高球）
+//   壞球：沒直接失分，但已經組織不了進攻，只能直接處理過網或送高球
+//   失誤（只有接發）：直接失分，或球出界、沒有接到
+const QUALITY_LEVELS = [['good', '到位'], ['run', '需要跑動'], ['bad', '壞球']];
+const RECEIVE_GRADES = QUALITY_LEVELS.concat([['err', '失誤']]);
+const DIG_TYPES = [['spike', '接扣'], ['tip', '接吊'], ['cover', 'Cover'], ['free', '接嗆司']];   // 舊版覆盤的起球類型（新版改記品質，舊資料仍會顯示）
+// 配球「位置」的類別與順序；沒設定位置的歸在 ''
+const DIST_POSITIONS = ['OH', 'MB', 'OPP', 'S', ''];
+function distPosLabel(code) { return code === '' ? '未設定位置' : (code === 'S' ? '舉球員自己' : code === 'OPP' ? '舉對（背）' : posLabel(code)); }
 // 全場每一球（依局、依序）
 function listRallies(match) {
     const out = [];
@@ -1589,8 +1696,12 @@ function reviewEntryOf(match, rid) {
     touch(match);
     return e;
 }
-function reviewSetReceive(match, rid, p, grade) { reviewEntryOf(match, rid).receive = p ? { p, grade } : null; }
-function reviewAddDig(match, rid, p, ok, type) { reviewEntryOf(match, rid).digs.push({ p, type: type || '', ok: !!ok }); }
+function reviewSetReceive(match, rid, p, grade) { reviewEntryOf(match, rid).receive = p ? { p, grade: normGrade(grade) } : null; }
+// 防守：ok = 起球；起球可以再給品質 q（到位／需要跑動／壞球），沒起不用
+function reviewAddDig(match, rid, p, ok, q) { reviewEntryOf(match, rid).digs.push({ p, ok: !!ok, q: ok ? normQuality(q) : '' }); }
+// 配球：這一球舉給誰（可多次，例如同一球連續兩次進攻）
+function reviewAddSetTo(match, rid, p) { const e = reviewEntryOf(match, rid); if (!Array.isArray(e.setTo)) e.setTo = []; e.setTo.push(p); }
+function reviewRemoveSetTo(match, rid, i) { const e = reviewEntryOf(match, rid); if (Array.isArray(e.setTo)) e.setTo.splice(i, 1); }
 function reviewRemoveDig(match, rid, i) { reviewEntryOf(match, rid).digs.splice(i, 1); }
 function reviewAddDug(match, rid, p) { reviewEntryOf(match, rid).attacksDug.push(p); }
 function reviewRemoveDug(match, rid, i) { reviewEntryOf(match, rid).attacksDug.splice(i, 1); }
@@ -1623,12 +1734,17 @@ const STAT_COLUMNS = [
     { h: '攔網得分', t: true, get: s => s.block.pt },
     { h: '攔網失誤', t: true, get: s => s.block.err },
     { h: '接發到位', get: s => s.receive.good },
-    { h: '接發不到位', get: s => s.receive.poor },
+    { h: '接發需要跑動', get: s => s.receive.run },
+    { h: '接發壞球', get: s => s.receive.bad },
     { h: '接發失誤', get: s => s.receive.err },
     { h: '接發到位率', t: true, pct: true, get: s => s.receive.rate },
     { h: '防守起球', get: s => s.dig.ok },
+    { h: '起球到位', get: s => s.dig.good },
+    { h: '起球需要跑動', get: s => s.dig.run },
+    { h: '起球壞球', get: s => s.dig.bad },
     { h: '防守沒起', get: s => s.dig.no },
-    { h: '防守起球率', t: true, pct: true, get: s => s.dig.rate }
+    { h: '防守起球率', t: true, pct: true, get: s => s.dig.rate },
+    { h: '被配球數', get: s => s.setTo }
 ];
 function fmtStatCell(col, s) {
     const v = col.get(s);
@@ -2218,7 +2334,7 @@ function runSelfTests() {
         const e1 = E('attack', 'pt', 'A', 'spike'), e2 = E('team', 'opp_pt');
         m.sets[0].log.push(e1, e2);
         const logBefore = JSON.stringify(m.sets[0].log);
-        reviewSetReceive(m, e1.id, 'R', 'good'); reviewAddDig(m, e1.id, 'D', true, 'spike'); reviewAddDig(m, e1.id, 'D2', false); reviewAddDug(m, e1.id, 'A'); reviewAddDug(m, e1.id, 'B');
+        reviewSetReceive(m, e1.id, 'R', 'good'); reviewAddDig(m, e1.id, 'D', true, 'good'); reviewAddDig(m, e1.id, 'D2', false, 'good'); reviewAddDug(m, e1.id, 'A'); reviewAddDug(m, e1.id, 'B');
         const s = computeMatchStats(m, null);
         eq([s.players.R.receive.good, s.players.R.receive.rate], [1, 1]); eq([s.players.D.dig.ok, s.players.D2.dig.no], [1, 1]);
         eq([s.players.A.attack.dug, s.players.B.attack.dug, s.team.attack.total], [1, 1, 3], '覆盤補記的被守起進攻擊總數');
@@ -2253,6 +2369,65 @@ function runSelfTests() {
         const t0 = Date.now(); m.videoSync = { t: t0, sec: 192 };
         eq(rallyVideoSec(m, { t: t0 + 90000 }), 282); eq(rallyVideoSec(m, { t: t0 - 500000 }), 0); eq(rallyVideoSec(fixtureMatch(), { t: t0 }), null);
         eq([parseClock('03:12'), parseClock('3:5'), parseClock('abc'), parseClock('1:75')], [192, 185, null, null]);
+    });
+
+    // ---- 覆盤擴充：接發等級、起球品質、配球、每局位置 ----
+    T('接發等級（到位／需要跑動／壞球／失誤）與起球品質；舊版「不到位」算需要跑動', () => {
+        const m = newMatch({ formatKey: 'bo3' }); m.sets[0].firstServe = 'them';
+        const ev = [E('attack', 'pt', 'A', 'spike'), E('attack', 'pt', 'A', 'spike'), E('attack', 'pt', 'A', 'spike'), E('receive', 'err', 'R'), E('attack', 'pt', 'A', 'spike')];
+        m.sets[0].log.push(...ev);
+        reviewSetReceive(m, ev[0].id, 'R', 'good'); reviewSetReceive(m, ev[1].id, 'R', 'run'); reviewSetReceive(m, ev[2].id, 'R', 'bad');
+        reviewMarkDone(m, ev[3].id);                                     // 賽中記了接球失分、覆盤時沒補 → 算失誤
+        m.review[ev[4].id] = { reviewed: true, receive: { p: 'R', grade: 'poor' } };   // 舊版資料
+        reviewAddDig(m, ev[0].id, 'D', true, 'good'); reviewAddDig(m, ev[0].id, 'D', true, 'run'); reviewAddDig(m, ev[0].id, 'D', true, ''); reviewAddDig(m, ev[0].id, 'D', false, 'bad');
+        const s = computeMatchStats(m, null), r = s.players.R.receive, d = s.players.D.dig;
+        eq([r.good, r.run, r.bad, r.err, r.total, r.rate], [1, 2, 1, 1, 5, 0.2], '接發');
+        eq([d.ok, d.no, d.good, d.run, d.bad, d.rate, d.goodRate], [3, 1, 1, 1, 0, 0.75, 0.5], '起球品質只算起球、沒分級的不進品質率');
+        eq(m.review[ev[0].id].digs[3].q, '', '沒起不存品質');
+        eq(normGrade('poor'), 'run'); eq(normGrade('xxx'), 'err'); eq(normQuality('good'), 'good'); eq(normQuality('spike'), '');
+    });
+    T('每局位置：局內確認的 → 名單快照的主位置 → 球員資料的主位置；沿用上一局', () => {
+        const m = newMatch({ formatKey: 'bo3', roster: [{ id: 'Y', name: 'Y', number: '1', positions: ['OH', 'OPP'] }, { id: 'Z', name: 'Z', number: '2', positions: ['MB'] }, { id: 'W', name: 'W', number: '3', positions: [] }] });
+        const db = { players: { W: { positions: ['S'] } } };
+        eq([positionOf(m, 0, 'Y', db), positionOf(m, 0, 'Z', db), positionOf(m, 0, 'W', db), positionOf(m, 0, 'nobody', db)], ['OH', 'MB', 'S', ''], '沒確認時用主位置');
+        m.sets[0].positions = { Y: 'OPP' };
+        eq(positionOf(m, 0, 'Y', db), 'OPP', '有確認的以確認為準');
+        eq(positionOf(m, 1, 'Y', db), 'OH', '別局不受影響');
+        eq(defaultSetPositions(m, db, 1), { Y: 'OPP', Z: 'MB', W: 'S' }, '下一局預設帶入上一局確認的位置');
+        const m2 = newMatch({ formatKey: 'bo3', roster: [], positions: { Q: 'MB' } });
+        eq(m2.sets[0].positions, { Q: 'MB' }); eq(m2.sets[1].positions, {});
+    });
+    T('配球：依球員、依位置統計；雙重位置的人用「那一局」確認的位置', () => {
+        const m = newMatch({ formatKey: 'bo3' });
+        m.roster = [{ playerId: 'Y', name: 'Y', number: '', positions: ['OH', 'OPP'] }, { playerId: 'Z', name: 'Z', number: '', positions: ['MB'] }, { playerId: 'W', name: 'W', number: '', positions: [] }];
+        m.sets[0].positions = { Y: 'OH' }; m.sets[1].positions = { Y: 'OPP' };
+        const e0 = [E('attack', 'pt', 'Y', 'spike'), E('attack', 'pt', 'Z', 'spike'), E('team', 'opp_err')], e1 = [E('attack', 'pt', 'Y', 'spike'), E('attack', 'err', 'W', 'spike')];
+        m.sets[0].log.push(...e0); m.sets[1].log.push(...e1);
+        reviewAddSetTo(m, e0[0].id, 'Y'); reviewAddSetTo(m, e0[1].id, 'Z'); reviewAddSetTo(m, e0[1].id, 'Y');      // 同一球連續兩次進攻
+        reviewAddSetTo(m, e1[0].id, 'Y'); reviewAddSetTo(m, e1[1].id, 'W');
+        const s = computeMatchStats(m, null);
+        eq(s.dist.total, 5, '總配球數');
+        eq(s.dist.byPlayer, { Y: 3, Z: 1, W: 1 }, '配給誰');
+        eq(s.dist.byPos, { OH: 2, MB: 1, OPP: 1, '': 1 }, '配給哪個位置：Y 第 1 局是大砲、第 2 局是舉對；W 沒設定位置');
+        eq([s.players.Y.setTo, s.team.setTo], [3, 5]);
+        eq(computeMatchStats(m, null, { setIdx: 1 }).dist.byPos, { OPP: 1, '': 1 }, '只看第 2 局');
+        reviewRemoveSetTo(m, e0[1].id, 1);
+        eq(computeMatchStats(m, null).dist.total, 4, '移除一筆');
+        const db = newDb(); db.matches[m.id] = m;
+        const agg = computeAggregate(db, [m, m]);
+        eq([agg.dist.total, agg.dist.byPos.OH, agg.team.setTo], [8, 2, 8], '跨場累計');
+        eq(distPosLabel('OH'), '大砲'); eq(distPosLabel(''), '未設定位置');
+    });
+    T('舊資料相容：沒有 positions／setTo 的比賽照常運作；migrate 補上空的 positions', () => {
+        const old = { schema: APP_SCHEMA, version: 1, matches: { m_old: { id: 'm_old', sets: [{ no: 1, log: [] }], roster: [], format: { bestOf: 3, setPoints: [25, 25, 15] } } } };
+        const r = migrate(old);
+        ok(r.ok); eq(r.db.matches.m_old.sets[0].positions, {});
+        const m = fixtureMatch(); delete m.sets[0].positions;
+        eq(computeMatchStats(m, null).dist.total, 0, '沒有配球資料');
+        const rid = m.sets[0].log.find(e => e.out !== 'cont').id;
+        m.review[rid] = { reviewed: true, digs: [{ p: 'D', type: 'spike', ok: true }], receive: { p: 'R', grade: 'poor' } };   // 舊版覆盤：起球有類型、沒有品質；接發是「不到位」
+        const s = computeMatchStats(m, null);
+        eq([s.players.D.dig.ok, s.players.D.dig.good + s.players.D.dig.run + s.players.D.dig.bad, s.players.R.receive.run], [1, 0, 1]);
     });
 
     // ---- P4：報告、CSV、歷史 ----
@@ -2742,7 +2917,7 @@ function viewHome() {
     });
     h += a2hsCardHtml();
     h += `<button class="btn-solid brand btn-start" data-action="new-match">開新比賽</button>`;
-    h += compareCardHtml(filterMatches(DB, null));
+    h += compareCardHtml(filterMatches(DB, { teamName: statsTeam() }), `最近一場 vs 上一場${teamNamesInHistory().length > 1 ? '（' + statsTeam() + '）' : ''}`);
     h += `<div class="card"><h2>備份與匯入</h2>
         ${staleBackup() ? `<div class="banner-warn">${DB.lastBackupAt ? `已經 ${Math.floor((Date.now() - DB.lastBackupAt) / 86400000)} 天沒有備份了` : '還沒有備份過'}，建議現在匯出一份。</div>` : ''}
         <div class="note">上次匯出：${esc(daysAgoText(DB.lastBackupAt))}。資料只存在這支手機上，記得定期匯出；匯出的紀錄檔可以在別的裝置匯入後接著用。</div>
@@ -2754,7 +2929,6 @@ function viewHome() {
             <div class="row"><div style="flex:1;min-width:0"><b>vs ${esc(c.match.opponent)}</b><div class="note">${esc(c.match.date)}</div></div><button class="btn-solid ghost small" data-action="restore-conflict" data-id="${esc(c.id)}">還原</button></div>`).join('')}</div>`;
     }
     h += `<div class="card"><h2>設定</h2>
-        <div class="toggle"><span>賽中顯示配球列<span class="note">欄中／背／大砲計數</span></span><button class="${s.showTallyRow ? 'on' : ''}" data-action="toggle-setting" data-key="showTallyRow" aria-label="賽中顯示配球列"></button></div>
         <div class="toggle"><span>新比賽預設填先發<span class="note">開啟才能自動算發球總數、場上只顯示 7 人</span></span><button class="${s.trackLineupDefault ? 'on' : ''}" data-action="toggle-setting" data-key="trackLineupDefault" aria-label="新比賽預設填先發"></button></div>
         <div class="field"><span>外觀</span>${segHtml([{ value: 'system', label: '跟隨系統' }, { value: 'light', label: '淺色' }, { value: 'dark', label: '深色' }], s.theme, 'set-theme')}</div></div>`;
     return h + '</div>';
@@ -3108,6 +3282,25 @@ function leSetCandidates(ids) {
     ui.le.candidates = ids;
     ui.le.lineup = cleanLineup(ui.le.lineup, ids) || newLineup({}, null);
 }
+/* ===== 本局位置確認：每個人這一局打哪個位置（有雙重位置的人要選）；配球的「位置」統計用這個 ===== */
+ui.posEdit = null;      // { map: { 球員ID: 'OH'|'MB'|'OPP'|'S'|'L'|'' }, ids: [球員ID…] }
+function posInit(map, ids) { ui.posEdit = { map: Object.assign({}, map), ids: ids.slice() }; }
+function positionsEditorHtml(nameOf, positionsOf) {
+    const pe = ui.posEdit;
+    if (!pe || !pe.ids.length) return '<div class="note">還沒有球員。</div>';
+    return `<div class="note">每個人這一局打哪個位置（有雙重位置的人請確認）。配球的「位置」統計會照這裡的設定；之後也能在覆盤或賽中選單改。</div>${pe.ids.map(id => {
+        const multi = positionsOf(id).length > 1;
+        return `<div class="posrow"><span class="pn">${esc(nameOf(id))}${multi ? '<small>雙重位置</small>' : ''}</span>${POSITIONS.map(c => `<button type="button" class="chip${pe.map[id] === c ? ' on' : ''}" data-action="pos-set" data-id="${esc(id)}" data-v="${c}">${esc(posLabel(c))}</button>`).join('')}</div>`;
+    }).join('')}`;
+}
+ACT['pos-set'] = el => { const pe = ui.posEdit, id = el.dataset.id; pe.map[id] = pe.map[id] === el.dataset.v ? '' : el.dataset.v; render(); };
+function posMapClean(map) { const o = {}; Object.keys(map).forEach(k => { if (map[k]) o[k] = map[k]; }); return o; }
+// 賽前設定：今天有來的人，預設用球員資料的主位置
+function setupPosSync() {
+    const ids = sortedIds(ui.setup.present), old = ui.posEdit ? ui.posEdit.map : {}, map = {};
+    ids.forEach(id => { map[id] = old[id] !== undefined ? old[id] : ((DB.players[id] && DB.players[id].positions[0]) || ''); });
+    posInit(map, ids);
+}
 function setupSetTeam(teamId) {
     const team = teamId ? DB.teams[teamId] : null;
     const members = team ? activeMembers(team).map(p => p.id) : [];
@@ -3116,6 +3309,7 @@ function setupSetTeam(teamId) {
     su.pool = members.slice();
     su.present = members.slice();
     leInit(team && team.defaultLineup ? cleanLineup(team.defaultLineup, members) : null, sortedIds(members));
+    ui.posEdit = null; setupPosSync();
 }
 function initSetup() {
     const last = Object.values(DB.matches).sort((a, b) => b.createdAt - a.createdAt)[0];
@@ -3150,6 +3344,7 @@ function viewRecord() {
         <div class="field"><span>日期</span><input type="date" class="input-text" data-field="stDate" value="${esc(F('stDate', dateStr()))}"></div></div>
         <div class="field"><span>賽制</span>${segHtml([{ value: 'bo3', label: '三局兩勝' }, { value: 'bo5', label: '五局三勝' }], F('stFormat', 'bo3'), 'st-format')}</div>
         <div class="field"><span>紀錄者（印在紀錄表右上）</span><input class="input-text" data-field="stRecorder" value="${esc(F('stRecorder', ''))}" autocomplete="off"></div></div>
+        <div class="card"><label>第 1 局每個人的位置</label>${positionsEditorHtml(id => DB.players[id].name, id => DB.players[id].positions || [])}</div>
         <div class="card"><label>第 1 局先發（可跳過）</label>
         <div class="toggle"><span>填先發、追蹤輪轉<span class="note">開啟才能自動算發球總數、場上只顯示 7 人；關閉就用全名單格子</span></span><button class="${su.track ? 'on' : ''}" data-action="st-track" aria-label="填先發、追蹤輪轉"></button></div>
         ${su.track ? lineupEditorHtml() : ''}
@@ -3165,6 +3360,7 @@ ACT['st-present'] = el => {
     const su = ui.setup, id = el.dataset.id, i = su.present.indexOf(id);
     if (i === -1) su.present.push(id); else su.present.splice(i, 1);
     leSetCandidates(sortedIds(su.present));
+    setupPosSync();
     render();
 };
 ACT['st-format'] = el => { ui.fields.stFormat = el.dataset.v; render(); };
@@ -3185,6 +3381,7 @@ ACT['st-extra-add'] = el => {
     if (su.pool.indexOf(id) === -1) su.pool.push(id);
     if (su.present.indexOf(id) === -1) su.present.push(id);
     leSetCandidates(sortedIds(su.present));
+    setupPosSync();
     render();
 };
 ACT['st-start'] = () => {
@@ -3202,7 +3399,8 @@ ACT['st-start'] = () => {
     const roster = sortedIds(su.present).map(id => DB.players[id]);
     const m = newMatch({
         teamId: su.teamId, opponent: F('stOpp', ''), event: F('stEvent', ''), date: F('stDate', dateStr()) || dateStr(),
-        formatKey: F('stFormat', 'bo3'), roster, recorder: F('stRecorder', ''), lineup, firstServe: su.firstServe
+        formatKey: F('stFormat', 'bo3'), roster, recorder: F('stRecorder', ''), lineup, firstServe: su.firstServe,
+        positions: posMapClean(ui.posEdit.map)
     });
     commit(db => { db.matches[m.id] = m; });
     ui.setup = null;
@@ -3302,9 +3500,6 @@ function renderLive() {
         <button class="tmbtn bad tap" data-tap="team-act" data-id="t_opp_pt">對手好球</button>
         <button class="tmbtn pend tap" data-tap="team-act" data-id="t_pending">⚠ 待確認<small>未記到，先記對手得分</small></button></div>`;
     $('#livePad').innerHTML = pad;
-    const tally = $('#liveTally');
-    tally.hidden = !DB.settings.showTallyRow;
-    tally.innerHTML = `<div class="tally-inner col gutter"><span class="tally-label">配球</span>${TALLY_KEYS.map(k => `<button class="tbtn tap" data-tap="tally" data-key="${k}">${k} <b>${st.tally[k]}</b></button>`).join('')}</div>`;
 }
 RENDERERS.live = renderLive;
 
@@ -3352,11 +3547,6 @@ function recordAction(actionId, pid) {
     else { const [t, tone] = toastFor(ev, m2, s.state); showToast(t, tone); }
 }
 ACT['team-act'] = el => recordAction(el.dataset.id, null);
-ACT['tally'] = el => {
-    const m = liveMatch(), i = m.curSet, key = el.dataset.key;
-    commit(db => { const mm = db.matches[m.id]; mm.sets[i].log.push({ k: 'tally', id: uid('e_'), t: Date.now(), key }); touch(mm); });
-    showToast(`配球 ${key}：${curState(liveMatch()).tally[key]}`);
-};
 ACT['undo'] = () => {
     const m = liveMatch(), i = m.curSet;
     if (!m.sets[i].log.length) { showToast('這一局沒有可以復原的紀錄'); return; }
@@ -3444,16 +3634,38 @@ function openSetStart(i) {
     leInit(carry, m.roster.map(r => r.playerId));
     const pf = prev ? prev.firstServe : null;
     const firstServe = set.firstServe || (pf ? (pf === 'us' ? 'them' : 'us') : null);
+    posInit(defaultSetPositions(m, DB, i), m.roster.map(r => r.playerId));
     openSheet('setStart', { i, track, firstServe, msg: '' });
 }
+// 球員在這場比賽裡的位置選項（名單快照的位置；沒有就看球員資料）
+const matchPositionsOf = id => { const m = liveMatch(), r = m && m.roster.find(x => x.playerId === id); return (r && r.positions && r.positions.length ? r.positions : (DB.players[id] && DB.players[id].positions) || []); };
 SHEETS.setStart = d => ({
     title: `第 ${d.i + 1} 局先發`, sub: '可跳過',
     html: `<div class="field"><span>先發球方${d.firstServe ? '（預設與上一局相反）' : ''}</span>${segHtml([{ value: 'us', label: '我方先發球' }, { value: 'them', label: '對方先發球' }, { value: '', label: '先不指定' }], d.firstServe || '', 'ss-serve')}</div>
         <div class="toggle"><span>填先發、追蹤輪轉<span class="note">關閉就用全名單格子，沒有換人按鈕</span></span><button class="${d.track ? 'on' : ''}" data-action="ss-track" aria-label="填先發、追蹤輪轉"></button></div>
         ${d.track ? lineupEditorHtml() : ''}
+        <div class="sub-label">這一局每個人的位置</div>${positionsEditorHtml(id => nameOf(id), matchPositionsOf)}
         <div class="form-msg">${esc(d.msg)}</div>
         <div class="confirm-row"><button class="btn-solid ghost" data-action="ss-skip">跳過</button><button class="btn-solid brand" data-action="ss-ok">開始這一局</button></div>`
 });
+// 單獨確認／修改某一局的位置（賽中選單、覆盤頁都能開）
+function posMatch() { return topView() === 'review' && ui.review ? rvMatch() : liveMatch(); }
+ACT['open-positions'] = el => {
+    const m = posMatch(), i = Number(el.dataset.i);
+    if (!m) return;
+    posInit(defaultSetPositions(m, DB, i), m.roster.map(r => r.playerId));
+    openSheet('setPositions', { i, matchId: m.id });
+};
+SHEETS.setPositions = d => {
+    const m = DB.matches[d.matchId];
+    const posOf = id => { const r = m.roster.find(x => x.playerId === id); return (r && r.positions && r.positions.length ? r.positions : (DB.players[id] && DB.players[id].positions) || []); };
+    return { title: `第 ${d.i + 1} 局的位置`, html: `${positionsEditorHtml(id => nameOfIn(m, DB, id), posOf)}<button class="btn-solid brand block" data-action="pos-save">儲存</button>` };
+};
+ACT['pos-save'] = () => {
+    const d = ui.sheet, map = posMapClean(ui.posEdit.map);
+    commit(db => { const mm = db.matches[d.matchId]; mm.sets[d.i].positions = map; touch(mm); });
+    closeSheet(); gtoast('已儲存位置');
+};
 ACT['ss-serve'] = el => { ui.sheet.firstServe = el.dataset.v || null; renderSheet(); };
 ACT['ss-track'] = () => { ui.sheet.track = !ui.sheet.track; renderSheet(); };
 ACT['ss-skip'] = () => closeSheet();
@@ -3464,7 +3676,8 @@ ACT['ss-ok'] = () => {
         if (missing) { d.msg = `先發還沒填滿（還差 ${missing} 格）。補滿，或關閉「填先發」`; renderSheet(); return; }
         if (!d.firstServe) { d.msg = '追蹤輪轉需要先發球方'; renderSheet(); return; }
     }
-    commit(db => { const mm = db.matches[m.id], set = mm.sets[d.i]; set.firstServe = d.firstServe; set.lineup = d.track ? cloneLineup(ui.le.lineup) : null; touch(mm); });
+    const positions = posMapClean(ui.posEdit.map);
+    commit(db => { const mm = db.matches[m.id], set = mm.sets[d.i]; set.firstServe = d.firstServe; set.lineup = d.track ? cloneLineup(ui.le.lineup) : null; set.positions = positions; touch(mm); });
     closeSheet();
 };
 
@@ -3478,6 +3691,7 @@ SHEETS.liveMenu = () => {
         h += menuItem('✏️', '直接編輯目前號位', '', 'edit-lineup');
     }
     if (!set.log.length) h += menuItem('🏐', `設定第 ${m.curSet + 1} 局先發`, '', 'open-set-start');
+    h += menuItem('🧭', `確認第 ${m.curSet + 1} 局每個人的位置`, '配球統計用', 'open-positions', `data-i="${m.curSet}"`);
     h += menuItem('➕', '加入今日球員', `${m.roster.length} 人`, 'add-today-open');
     h += menuItem('📤', '匯出本場紀錄檔', '.json', 'export-match', `data-id="${esc(m.id)}"`);
     h += menuItem('🏁', '結束比賽（存檔）', '', 'finish-match', '', 'danger');
@@ -3746,24 +3960,21 @@ function teamNamesInHistory() {
     return names.sort((a, b) => a.localeCompare(b, 'zh-Hant'));
 }
 function viewHistory() {
-    const names = teamNamesInHistory(), cur = ui.stats.team;
-    const list = matchHistory(DB, cur === 'all' ? null : { teamName: cur });
-    const filter = names.length > 1 ? `<div class="chips">${chipsHtml([{ value: 'all', label: '全部' }].concat(names.map(n => ({ value: n, label: n }))), [cur], 'stats-team')}</div>` : '';
-    return `${filter}
-        ${list.length ? `<div class="list">${list.map(r => `<button class="list-row" data-action="open-report" data-id="${esc(r.id)}"><span class="lr-main"><span class="lr-title">vs ${esc(r.opponent)}</span>
+    const list = matchHistory(DB, { teamName: statsTeam() });
+    return `${list.length ? `<div class="list">${list.map(r => `<button class="list-row" data-action="open-report" data-id="${esc(r.id)}"><span class="lr-main"><span class="lr-title">vs ${esc(r.opponent)}</span>
             <span class="lr-sub">${esc(r.date)}${r.event ? '・' + esc(r.event) : ''}・${esc(teamLabel(DB, r.teamId))}</span><span class="lr-sub">${r.sets.length ? esc(r.sets.join('　')) : '還沒有紀錄'}</span></span>
             ${r.status === 'live' ? '<span class="tagx">進行中</span>' : (r.result ? `<span class="tagx ${r.result === '勝' ? 'win' : 'lose'}">${r.result}</span>` : '')}<span class="lr-num">${r.us}:${r.them}</span></button>`).join('')}</div>` : '<div class="empty">還沒有比賽。<br>到「紀錄」開一場新比賽。</div>'}`;
 }
-ui.stats = { sub: 'history', team: 'all', f: { teamName: '', seasonId: '', event: '', from: '', to: '', reviewedOnly: false }, sort: { h: '得分', dir: 'desc' }, tip: null, table: false };
+ui.stats = { sub: 'history', f: { teamName: '', seasonId: '', event: '', from: '', to: '', reviewedOnly: false }, sort: { h: '得分', dir: 'desc' }, tip: null, table: false };
 function viewStats() {
     const t = ui.stats;
     return `<div class="page-inner col gutter"><div class="page-title"><h1>數據</h1><p>比賽歷史、跨場分析與球員生涯</p></div>
+        ${teamSwitchHtml()}
         ${segHtml([{ value: 'history', label: '比賽歷史' }, { value: 'cross', label: '跨場分析' }], t.sub, 'stats-sub')}
         ${t.sub === 'history' ? viewHistory() : viewCross()}</div>`;
 }
 TAB_VIEWS.stats = viewStats;
 ACT['stats-sub'] = el => { ui.stats.sub = el.dataset.v; ui.stats.tip = null; render(); };
-ACT['stats-team'] = el => { ui.stats.team = el.dataset.v; render(); };
 
 /* ===== 圖表（SVG）：單一座標軸、2px 線、≥8px 標記、淡色格線；點一下看數值，另有表格 ===== */
 function niceMax(v) {
@@ -3826,17 +4037,16 @@ const tipOf = k => (ui.stats.tip && ui.stats.tip.k === k ? ui.stats.tip.i : null
 
 /* ===== 跨場分析 ===== */
 const SF_LABEL = { teamName: '隊伍', seasonId: '賽季', event: '賽事' };
-function crossFilterHtml(names) {
+function crossFilterHtml() {
     const f = ui.stats.f, seasons = seasonsSorted(DB), events = distinctEvents(DB);
     return `<div class="card"><label>篩選</label>
-        ${names.length > 1 ? `<div class="chips">${chipsHtml([{ value: '', label: '全部隊伍' }].concat(names.map(n => ({ value: n, label: n }))), [f.teamName], 'sf-team')}</div>` : ''}
         <div class="field-row"><div class="field"><span>賽季</span><select class="input-text" data-live="sf-set" data-k="seasonId"><option value="">全部</option>${seasons.map(x => `<option value="${esc(x.id)}"${f.seasonId === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
         <div class="field"><span>賽事</span><select class="input-text" data-live="sf-set" data-k="event"><option value="">全部</option>${events.map(x => `<option value="${esc(x)}"${f.event === x ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></div></div>
         <div class="field-row"><div class="field"><span>從</span><input type="date" class="input-text" data-live="sf-set" data-k="from" value="${esc(f.from)}"></div>
         <div class="field"><span>到</span><input type="date" class="input-text" data-live="sf-set" data-k="to" value="${esc(f.to)}"></div></div>
         <div class="chips"><button type="button" class="chip${f.reviewedOnly ? ' on' : ''}" data-action="sf-reviewed">只算有覆盤的比賽</button></div></div>`;
 }
-ACT['sf-team'] = el => { ui.stats.f.teamName = el.dataset.v; ui.stats.tip = null; render(); };
+ACT['sf-team'] = el => { ui.stats.f.teamName = el.dataset.v; ui.stats.tip = null; try { localStorage.setItem(STATS_TEAM_KEY, el.dataset.v); } catch (e) { /* 沒有儲存空間就算了 */ } render(); };
 ACT['sf-set'] = el => { ui.stats.f[el.dataset.k] = el.value; ui.stats.tip = null; render(); };
 ACT['sf-reviewed'] = () => { ui.stats.f.reviewedOnly = !ui.stats.f.reviewedOnly; ui.stats.tip = null; render(); };
 function compareCardHtml(list, title) {
@@ -3855,9 +4065,10 @@ function compareCardHtml(list, title) {
         ${c.prev ? '' : '<div class="note">只有一場比賽，還沒有可以比較的上一場。</div>'}</div>`;
 }
 function viewCross() {
-    const names = teamNamesInHistory(), f = ui.stats.f;
+    statsTeam();
+    const f = ui.stats.f;
     const list = filterMatches(DB, { teamName: f.teamName, seasonId: f.seasonId, event: f.event, from: f.from, to: f.to, reviewedOnly: f.reviewedOnly });
-    let h = crossFilterHtml(names);
+    let h = crossFilterHtml();
     if (!list.length) return h + '<div class="empty">沒有符合條件的比賽。<br>放寬篩選，或先記一場比賽。</div>';
     const agg = computeAggregate(DB, list), t = agg.team;
     h += `<div class="card"><h2>戰績總覽 <span class="note">${agg.n} 場・${agg.perMatch.reduce((a, r) => a + r.sets, 0)} 局</span></h2>
@@ -3867,6 +4078,8 @@ function viewCross() {
         <div class="vs-line"><span class="note">攻擊成功率</span><b>${fmtPct(t.attack.rate)}</b><span class="note">效率 ${fmtPct(t.attack.eff)}</span></div>
         ${agg.noteHighMatches ? `<div class="banner-warn">其中 ${agg.noteHighMatches} 場沒有記被守起，攻擊成功率會偏高。</div>` : ''}</div>`;
     h += compareCardHtml(list);
+    h += vizCardHtml(t, '累計');
+    h += distCardHtml(agg.dist, rvNameAny, '累計');
     // 團隊趨勢
     const labels = agg.perMatch.map(r => mmdd(r.date)), tip = tipOf('trend');
     const atk = agg.perMatch.map(r => r.attackPt), err = agg.perMatch.map(r => r.errors);
@@ -3946,6 +4159,73 @@ function barGroup(title, data, color, hi) {
 function metricRow(label, parts) {
     return `<div class="metric"><b>${label}</b><div class="mv">${parts.map(p => `<span><em>${p[0]}</em>${p[1]}</span>`).join('')}</div></div>`;
 }
+/* ===== 視覺化：對比條（左成功、右失敗）、配球百分比 ===== */
+const POS_VAR = { OH: 'var(--pos-oh)', MB: 'var(--pos-mb)', OPP: 'var(--pos-opp)', S: 'var(--pos-s)', '': 'var(--pos-none)' };
+const vpct = (n, tot) => tot ? Math.round(n / tot * 100) + '%' : '—';
+// segs: [{ cls:'good'|'mid'|'bad'|'err', n, label }]；左邊標籤 = 好的結果（good）的百分比，右邊 = 壞的結果（bad、err）合計的百分比
+function vsBar(title, segs, opt) {
+    const o = opt || {}, tot = segs.reduce((a, x) => a + x.n, 0);
+    if (!tot) return `<div class="viz"><div class="viz-head"><span class="viz-pill none">—</span><span class="viz-title">${esc(title)}</span><span class="viz-pill none">—</span></div><div class="note">${esc(o.empty || '還沒有資料')}</div></div>`;
+    const goodN = segs.filter(x => x.cls === 'good').reduce((a, x) => a + x.n, 0), badN = segs.filter(x => x.cls === 'bad' || x.cls === 'err').reduce((a, x) => a + x.n, 0);
+    const bar = segs.filter(x => x.n).map(x => `<i class="${x.cls}" style="flex:${x.n} 1 0">${o.tall ? Math.round(x.n / tot * 100) + '%' : ''}</i>`).join('');
+    const aria = `${title}：${segs.map(x => `${x.label} ${x.n}（${vpct(x.n, tot)}）`).join('、')}`;
+    return `<div class="viz" role="img" aria-label="${esc(aria)}"><div class="viz-head"><span class="viz-pill ${goodN ? 'good' : 'none'}">${vpct(goodN, tot)}</span><span class="viz-title">${esc(title)}</span><span class="viz-pill ${badN ? 'bad' : 'none'}">${vpct(badN, tot)}</span></div>
+        <div class="viz-bar${o.tall ? ' tall' : ''}">${bar}</div>
+        <div class="viz-foot">${segs.map(x => `<span>${esc(x.label)} ${x.n}</span>`).join('')}</div></div>`;
+}
+function posLegendHtml(byPos, total) {
+    return `<div class="viz-legend">${DIST_POSITIONS.filter(k => byPos[k] || k !== '').map(k => {
+        const n = byPos[k] || 0;
+        return `<div class="${n ? '' : 'zero'}"><i class="sw" style="background:${POS_VAR[k]}"></i><span>${esc(distPosLabel(k))}</span><span>${n} 球</span><span class="pct">${vpct(n, total)}</span></div>`;
+    }).join('')}</div>`;
+}
+function posBarHtml(byPos, total, tall, widthPct) {
+    return `<div class="viz-bar${tall ? ' tall' : ''}"${widthPct ? ` style="width:${widthPct}%"` : ''}>${DIST_POSITIONS.filter(k => byPos[k]).map(k => `<i style="flex:${byPos[k]} 1 0;background:${POS_VAR[k]}">${tall ? Math.round(byPos[k] / total * 100) + '%' : ''}</i>`).join('')}</div>`;
+}
+function distCardHtml(dist, nameOf, scope) {
+    if (!dist || !dist.total) return `<div class="card rp-card"><h2>${scope}：舉球配球</h2><div class="empty">還沒有配球資料。<br>到「逐球覆盤」每一球記「舉給誰」，這裡就會出現。</div></div>`;
+    const pids = Object.keys(dist.byPlayer).sort((a, b) => dist.byPlayer[b] - dist.byPlayer[a]), top = dist.byPlayer[pids[0]];
+    return `<div class="card rp-card"><h2>${scope}：舉球配球 <span class="note">${dist.total} 球</span></h2>
+        <div class="sub-label">配給哪個位置</div>${posBarHtml(dist.byPos, dist.total, true)}${posLegendHtml(dist.byPos, dist.total)}
+        <div class="sub-label" style="margin-top:10px">配給誰</div>
+        ${pids.map(pid => `<div class="prow"><span class="nm">${esc(nameOf(pid))}</span>${posBarHtml(dist.byPlayerPos[pid] || {}, dist.byPlayer[pid], false, Math.max(6, Math.round(dist.byPlayer[pid] / top * 100)))}<span class="v">${dist.byPlayer[pid]} 球 ${vpct(dist.byPlayer[pid], dist.total)}</span></div>`).join('')}
+        <div class="note">條的長度 = 配球數（跟最多的人比）。顏色 = 那位球員「那一局」的位置（大砲／欄中／舉對／舉球員自己）。位置在每局開始前確認；有雙重位置的人以確認的為準。</div></div>`;
+}
+// 團隊對比條：攻擊、發球、接發、防守
+function vizCardHtml(t, scope) {
+    const a = t.attack, sv = t.serve, rc = t.receive, dg = t.dig;
+    let h = `<div class="card rp-card"><h2>${scope}：成功與失敗</h2>`;
+    h += vsBar('攻擊', [{ cls: 'good', n: a.pt, label: '得分' }, { cls: 'mid', n: a.dug, label: '被守起' }, { cls: 'bad', n: a.err, label: '失誤' }], { tall: true });
+    h += sv.total ? vsBar('發球', [{ cls: 'good', n: sv.pt, label: 'ACE' }, { cls: 'mid', n: Math.max(0, sv.total - sv.pt - sv.err), label: '一般' }, { cls: 'bad', n: sv.err, label: '失誤' }], { tall: true }) : vsBar('發球', [], { empty: '沒有先發陣容，算不出發球總數' });
+    h += vsBar('接發', [{ cls: 'good', n: rc.good, label: '到位' }, { cls: 'mid', n: rc.run, label: '需要跑動' }, { cls: 'bad', n: rc.bad, label: '壞球' }, { cls: 'err', n: rc.err, label: '失誤' }], { tall: true, empty: '還沒有逐球覆盤' });
+    h += vsBar('防守起球', [{ cls: 'good', n: dg.ok, label: '起球' }, { cls: 'bad', n: dg.no, label: '沒起' }], { tall: true, empty: '還沒有逐球覆盤' });
+    if (dg.good + dg.run + dg.bad) h += vsBar('起球品質', [{ cls: 'good', n: dg.good, label: '到位' }, { cls: 'mid', n: dg.run, label: '需要跑動' }, { cls: 'bad', n: dg.bad, label: '壞球' }], { tall: true });
+    return h + '<div class="note">左邊 = 好的結果，右邊 = 壞的結果；百分比 = 佔該項全部次數的比例。</div></div>';
+}
+// 隊伍切換（A隊／B隊）：數據頁、跨場分析、首頁比較都用同一個
+const STATS_TEAM_KEY = 'ntuche.statsTeam';
+function statsTeam() {
+    const names = teamNamesInHistory();
+    let cur = ui.stats.f.teamName;
+    if (cur && names.indexOf(cur) === -1) cur = '';
+    if (!cur && names.length) {
+        let saved = '';
+        try { saved = localStorage.getItem(STATS_TEAM_KEY) || ''; } catch (e) { saved = ''; }
+        if (names.indexOf(saved) !== -1) cur = saved;
+        else {
+            const latest = Object.values(DB.matches).sort((x, y) => String(y.date).localeCompare(String(x.date)) || (y.createdAt || 0) - (x.createdAt || 0))[0];
+            const t = latest && DB.teams[latest.teamId];
+            cur = t && names.indexOf(t.name) !== -1 ? t.name : names[0];
+        }
+    }
+    ui.stats.f.teamName = cur || '';
+    return cur || '';
+}
+function teamSwitchHtml() {
+    const names = teamNamesInHistory(), cur = statsTeam();
+    if (names.length < 2) return names.length ? `<div class="teamsw"><div class="note">目前顯示：<b>${esc(names[0])}</b> 的數據</div></div>` : '';
+    return `<div class="teamsw">${segHtml(names.map(n => ({ value: n, label: n })), cur, 'sf-team')}<div class="note">目前顯示：<b>${esc(cur)}</b> 的數據（A、B 隊分開計算）</div></div>`;
+}
 function reportHtml(m) {
     const sum = matchSummary(m), idx = ui.report.setIdx;
     const ms = computeMatchStats(m, DB, idx === null ? null : { setIdx: idx });
@@ -3973,11 +4253,13 @@ function reportHtml(m) {
         ${a.noteHigh ? '<div class="banner-warn">此場未記錄被守起，成功率會偏高。</div>' : ''}
         ${metricRow('發球', [['得分', sv.pt], ['失誤', sv.err], ['總數', sv.total === null ? '—' : sv.total], ['成功率', fmtPct(sv.rate)], ['ACE率', fmtPct(sv.ace)]])}
         ${metricRow('攔網', [['得分', t.block.pt], ['失誤', t.block.err]])}
-        ${metricRow('接發', rcv.total ? [['到位', rcv.good], ['不到位', rcv.poor], ['失誤', rcv.err], ['到位率', fmtPct(rcv.rate)]] : [['', '—（還沒有逐球覆盤）']])}
-        ${metricRow('防守', dg.total ? [['起球', dg.ok], ['沒起', dg.no], ['起球率', fmtPct(dg.rate)]] : [['', '—（還沒有逐球覆盤）']])}
+        ${metricRow('接發', rcv.total ? [['到位', rcv.good], ['需要跑動', rcv.run], ['壞球', rcv.bad], ['失誤', rcv.err], ['到位率', fmtPct(rcv.rate)]] : [['', '—（還沒有逐球覆盤）']])}
+        ${metricRow('防守', dg.total ? [['起球', dg.ok], ['沒起', dg.no], ['起球率', fmtPct(dg.rate)]].concat(dg.good + dg.run + dg.bad ? [['品質 到位', dg.good], ['需要跑動', dg.run], ['壞球', dg.bad]] : []) : [['', '—（還沒有逐球覆盤）']])}
         ${metricRow('連續', [['最多連得', runTxt(ms.runs.us)], ['最多連失', runTxt(ms.runs.them)]])}
-        ${DB.settings.showTallyRow || TALLY_KEYS.some(k => ms.tally[k]) ? metricRow('配球', TALLY_KEYS.map(k => [k, ms.tally[k]])) : ''}
+        ${TALLY_KEYS.some(k => ms.tally[k]) ? metricRow('舊配球', TALLY_KEYS.map(k => [k, ms.tally[k]])) : ''}
         ${ms.tracked ? '' : '<div class="note">這個範圍沒有先發陣容，發球總數與發球成功率顯示「—」。</div>'}</div>`;
+    h += vizCardHtml(t, scope);
+    h += distCardHtml(ms.dist, pid => nameOfIn(m, DB, pid), scope);
     // 個人表
     const cols = STAT_COLUMNS.filter(c => c.t);
     const ids = reportPlayerIds(m, ms);
@@ -4109,21 +4391,33 @@ function renderReview() {
         }
         h += '</div>';
     }
-    if (r.serve === 'them') {
-        h += `<div class="rv-sec"><b>接發 <small>（到位：舉球員在進攻線前、可以用上手舉球）</small></b>`;
-        if (e.receive) h += `<div class="chips"><button class="chip on" data-action="rv-recv-clear">${esc(rvName(m, e.receive.p))}・${esc((RECEIVE_GRADES.find(g => g[0] === e.receive.grade) || [0, ''])[1])} ✕</button></div>`;
+    if (r.serve !== 'us') {
+        const gradeName = g => g === 'poor' ? '不到位（舊版）' : ((RECEIVE_GRADES.find(x => x[0] === normGrade(g)) || [0, ''])[1]);
+        h += `<div class="rv-sec"><b>接發 <small>（${r.serve === 'them' ? '對方發球' : '發球方未知，可以不填'}）</small></b>`;
+        if (e.receive) h += `<div class="chips"><button class="chip on" data-action="rv-recv-clear">${esc(rvName(m, e.receive.p))}・${esc(gradeName(e.receive.grade))} ✕</button></div>`;
         else {
-            h += rvChips(m, item, 'rv-recv-p', rv.recvP);
-            if (rv.recvP) h += `<div class="rv-grades">${RECEIVE_GRADES.map(g => `<button class="${g[0]}" data-action="rv-grade" data-g="${g[0]}">${g[1]}</button>`).join('')}</div>`;
+            h += `<div class="note">誰接的？</div>${rvChips(m, item, 'rv-recv-p', rv.recvP)}`;
+            if (rv.recvP) h += `<div class="note">${esc(rvName(m, rv.recvP))}這一球接得如何？（到位：可以用上手舉球、三點以上進攻都用得出來；需要跑動：舉球員要明顯移動、選擇變少；壞球：組織不了進攻；失誤：直接失分）</div><div class="rv-grades">${RECEIVE_GRADES.map(g => `<button class="${g[0]}" data-action="rv-grade" data-g="${g[0]}">${g[1]}</button>`).join('')}</div>`;
         }
         h += '</div>';
     }
+    // 配球：這一球舉給誰；位置用他「這一局」確認的位置
+    const setTo = e.setTo || [], liveAtk = [];
+    r.events.forEach(x => { if (x.skill === 'attack' && x.p && (x.out === 'pt' || x.out === 'err' || x.out === 'cont') && liveAtk.indexOf(x.p) === -1) liveAtk.push(x.p); });
+    const posTag = id => { const c = positionOf(m, item.setIdx, id, DB); return c ? posLabel(c) : '未設位置'; };
+    const toChips = (ids, action, sel) => `<div class="chips">${ids.map(id => `<button type="button" class="chip${sel === id ? ' on' : ''}" data-action="${action}" data-id="${esc(id)}">${esc(rvName(m, id))} <span class="pp">${esc(posTag(id))}</span></button>`).join('')}</div>`;
+    h += `<div class="rv-sec"><b>配球 <small>（這一球舉給誰；可多次）</small></b>
+        ${setTo.length ? `<div class="chips">${setTo.map((pid, i) => `<button class="chip on" data-action="rv-sto-del" data-i="${i}">${esc(rvName(m, pid))} <span class="pp">${esc(posTag(pid))}</span> ✕</button>`).join('')}</div>` : ''}
+        ${liveAtk.length ? `<div class="note">賽中記到這球的攻擊，點一下加入配球：</div>${toChips(liveAtk, 'rv-sto-p', null)}` : ''}
+        <div class="note">舉給誰？</div>${toChips(rvCands(m, item), 'rv-sto-p', null)}
+        <button type="button" class="chip" data-action="open-positions" data-i="${item.setIdx}">調整第 ${item.setIdx + 1} 局的位置</button></div>`;
     h += `<div class="rv-sec"><b>防守 <small>（起球：球被接起、比賽繼續；沒起：直接落地或出界）</small></b>`;
     const digs = e.digs || [];
-    if (digs.length) h += `<div class="chips">${digs.map((d, i) => `<button class="chip on" data-action="rv-dig-del" data-i="${i}">${esc(rvName(m, d.p))}・${d.ok ? '起球' : '沒起'}${d.type ? '・' + esc((DIG_TYPES.find(t => t[0] === d.type) || [0, ''])[1]) : ''} ✕</button>`).join('')}</div>`;
+    const qName = q => (QUALITY_LEVELS.find(x => x[0] === q) || [0, ''])[1];
+    if (digs.length) h += `<div class="chips">${digs.map((d, i) => `<button class="chip on" data-action="rv-dig-del" data-i="${i}">${esc(rvName(m, d.p))}・${d.ok ? '起球' : '沒起'}${d.q ? '・' + esc(qName(d.q)) : ''}${d.type ? '・' + esc((DIG_TYPES.find(t => t[0] === d.type) || [0, ''])[1]) : ''} ✕</button>`).join('')}</div>`;
     if (!rv.dig) h += '<div class="rv-two"><button class="good" data-action="rv-dig-start" data-ok="1">＋ 起球</button><button class="bad" data-action="rv-dig-start" data-ok="0">＋ 沒起</button></div>';
     else if (!rv.dig.p) h += `<div class="note">${rv.dig.ok ? '起球' : '沒起'}的是誰？</div>${rvChips(m, item, 'rv-dig-p', null)}<button class="btn-solid ghost small" data-action="rv-dig-cancel">取消</button>`;
-    else h += `<div class="note">${esc(rvName(m, rv.dig.p))}・${rv.dig.ok ? '起球' : '沒起'}，是哪一種？（可略）</div><div class="chips">${DIG_TYPES.map(t => `<button type="button" class="chip" data-action="rv-dig-type" data-t="${t[0]}">${t[1]}</button>`).join('')}<button type="button" class="chip" data-action="rv-dig-type" data-t="">略過</button></div>`;
+    else h += `<div class="note">${esc(rvName(m, rv.dig.p))}這一球起得如何？（到位：可以用上手舉球；需要跑動：舉球員要明顯移動；壞球：組織不了進攻）</div><div class="rv-grades three">${QUALITY_LEVELS.map(q => `<button class="${q[0]}" data-action="rv-dig-q" data-q="${q[0]}">${q[1]}</button>`).join('')}</div><button class="btn-solid ghost small" data-action="rv-dig-cancel">取消</button>`;
     h += '</div>';
     const dug = e.attacksDug || [];
     h += `<div class="rv-sec"><b>攻擊被守起 <small>（賽中沒記到的；可多次）</small></b>${dug.length ? `<div class="chips">${dug.map((pid, i) => `<button class="chip on" data-action="rv-dug-del" data-i="${i}">${esc(rvName(m, pid))} ✕</button>`).join('')}</div>` : ''}${rvChips(m, item, 'rv-dug-p', null)}</div>`;
@@ -4142,8 +4436,15 @@ ACT['rv-grade'] = el => { const p = ui.review.recvP, rid = rvRid(); ui.review.re
 ACT['rv-recv-clear'] = () => { const rid = rvRid(); rvCommit(m => reviewSetReceive(m, rid, null)); };
 ACT['rv-dig-start'] = el => { ui.review.dig = { ok: el.dataset.ok === '1', p: null }; render(); };
 ACT['rv-dig-cancel'] = () => { ui.review.dig = null; render(); };
-ACT['rv-dig-p'] = el => { ui.review.dig.p = el.dataset.id; render(); };
-ACT['rv-dig-type'] = el => { const d = ui.review.dig, rid = rvRid(); ui.review.dig = null; rvCommit(m => reviewAddDig(m, rid, d.p, d.ok, el.dataset.t)); };
+ACT['rv-dig-p'] = el => {
+    const d = ui.review.dig, rid = rvRid(), p = el.dataset.id;
+    if (d.ok) { d.p = p; render(); return; }          // 起球要再選品質；沒起選完人就記下
+    ui.review.dig = null;
+    rvCommit(m => reviewAddDig(m, rid, p, false));
+};
+ACT['rv-dig-q'] = el => { const d = ui.review.dig, rid = rvRid(), q = el.dataset.q; ui.review.dig = null; rvCommit(m => reviewAddDig(m, rid, d.p, true, q)); };
+ACT['rv-sto-p'] = el => { const rid = rvRid(); rvCommit(m => reviewAddSetTo(m, rid, el.dataset.id)); };
+ACT['rv-sto-del'] = el => { const rid = rvRid(), i = Number(el.dataset.i); rvCommit(m => reviewRemoveSetTo(m, rid, i)); };
 ACT['rv-dig-del'] = el => { const rid = rvRid(), i = Number(el.dataset.i); rvCommit(m => reviewRemoveDig(m, rid, i)); };
 ACT['rv-dug-p'] = el => { const rid = rvRid(); rvCommit(m => reviewAddDug(m, rid, el.dataset.id)); };
 ACT['rv-dug-del'] = el => { const rid = rvRid(), i = Number(el.dataset.i); rvCommit(m => reviewRemoveDug(m, rid, i)); };
