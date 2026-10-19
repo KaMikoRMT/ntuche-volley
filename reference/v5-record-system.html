@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>台大化工男排紀錄系統</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="theme-color" content="#8c2333">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&display=swap">
+<style>
+    /* Layout: 單手一屏 — 比分帶 / 即時軌跡條 / 球員格 / 3×5 原因格（吃掉剩餘高度）/ 配球列；不需要捲動 */
+    :root {
+        --bg: #f3ece3;
+        --surface: #fbf8f4;
+        --ink: #3a2e29;
+        --muted: #85766c;
+        --line: #e2d6cb;
+        --band: #8c2333;
+        --on-band: #fff8f2;
+        --band-soft: rgba(255, 248, 242, 0.16);
+        --band-line: rgba(255, 248, 242, 0.45);
+        --score: #5e7746;
+        --score-team: #3f5530;
+        --score-text: #4f6a3a;
+        --loss: #b04a4f;
+        --loss-team: #6d1a27;
+        --loss-text: #a03a40;
+        --on-btn: #ffffff;
+        --chip: #f6e9e4;
+        --chip-line: #dbb7ae;
+        --chip-on: #8c2333;
+        --on-chip-on: #ffffff;
+        --gold: #e8c26a;
+        --on-gold: #3a2e29;
+        --warn: #d9a62e;
+        --on-warn: #3a2e29;
+        --pending-bg: #fff176;
+        --pending-fg: #8a6500;
+        --tally: #4a3a33;
+        --scrim: rgba(28, 18, 14, 0.5);
+        --shadow: 0 1px 4px rgba(40, 24, 18, 0.18);
+        /* 紀錄表是「紙」：兩種主題都維持白底黑字 */
+        --paper: #ffffff;
+        --paper-ink: #111111;
+        --paper-line: #9a9a9a;
+        --paper-rule: #000000;
+        --paper-rule2: #555555;
+        --paper-head: #f4f4f4;
+        --paper-label: #eeeeee;
+        --paper-soft: #fafafa;
+        --paper-dash: #bbbbbb;
+        --paper-sub: #555555;
+        --paper-pending: #fff176;
+        --paper-pending-fg: #8a6500;
+        --font-ui: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+        --font-score: "Barlow Condensed", "Arial Narrow", -apple-system, sans-serif;
+        color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+            --bg: #1d1816; --surface: #28211e; --ink: #f1e7df; --muted: #a8978b; --line: #3d332e;
+            --band: #5e1824; --on-band: #fff3ec;
+            --score: #5c7646; --score-team: #445c33; --score-text: #9bbb7c;
+            --loss: #a9474e; --loss-team: #74222f; --loss-text: #ec8c90;
+            --chip: #332a27; --chip-line: #54453f; --chip-on: #c4485a;
+            --warn: #c99a2a; --pending-bg: #6b5a14; --pending-fg: #ffe680;
+            --tally: #3e332e; --scrim: rgba(0, 0, 0, 0.6); --shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+            color-scheme: dark;
+        }
+    }
+    :root[data-theme="dark"] {
+        --bg: #1d1816; --surface: #28211e; --ink: #f1e7df; --muted: #a8978b; --line: #3d332e;
+        --band: #5e1824; --on-band: #fff3ec;
+        --score: #5c7646; --score-team: #445c33; --score-text: #9bbb7c;
+        --loss: #a9474e; --loss-team: #74222f; --loss-text: #ec8c90;
+        --chip: #332a27; --chip-line: #54453f; --chip-on: #c4485a;
+        --warn: #c99a2a; --pending-bg: #6b5a14; --pending-fg: #ffe680;
+        --tally: #3e332e; --scrim: rgba(0, 0, 0, 0.6); --shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+        color-scheme: dark;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    html { height: 100%; overscroll-behavior: none; }
+    body {
+        height: 100%; margin: 0; overflow: hidden; overscroll-behavior: none;
+        background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px;
+        -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    }
+    button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    .tap:active { transform: translateY(1px); filter: brightness(0.9); }
+    .gutter { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+    .col { width: 100%; max-width: 640px; margin-left: auto; margin-right: auto; }
+
+    .view { display: none; height: 100%; }
+    .view.active { display: flex; flex-direction: column; }
+
+    /* ===== 設定畫面 ===== */
+    #setupView { overflow-y: auto; }
+    .setup { display: flex; flex-direction: column; gap: 14px; padding-block: 16px 28px; }
+    .setup-title { background: var(--band); color: var(--on-band); border-radius: 12px; padding: 16px; }
+    .setup-title h1 { margin: 0; font-size: 19px; letter-spacing: 1px; }
+    .setup-title p { margin: 4px 0 0; font-size: 13px; opacity: 0.85; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+    .card label, .card .card-label { font-weight: 700; font-size: 15px; }
+    .card .note { font-size: 12px; color: var(--muted); }
+    .resume-card { border-color: var(--gold); }
+    .input-text { width: 100%; padding: 11px 12px; border: 1px solid var(--chip-line); border-radius: 8px; font-size: 16px; background: var(--bg); color: var(--ink); -webkit-user-select: auto; user-select: auto; }
+    .row { display: flex; gap: 8px; }
+    .row .input-text { flex: 1; min-width: 0; }
+    .btn-solid { border: none; border-radius: 8px; padding: 0 18px; min-height: 44px; font-weight: 700; font-size: 15px; background: var(--score); color: var(--on-btn); }
+    .btn-solid.brand { background: var(--band); color: var(--on-band); }
+    .btn-solid.ghost { background: transparent; color: var(--ink); border: 1px solid var(--chip-line); }
+    .btn-solid.danger { background: var(--loss); color: var(--on-btn); }
+    .btn-start { min-height: 54px; font-size: 18px; border-radius: 12px; }
+    .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag { display: flex; align-items: center; gap: 6px; background: var(--chip); border: 1px solid var(--chip-line); border-radius: 20px; padding: 6px 8px 6px 12px; font-size: 15px; font-weight: 700; }
+    .tag-x { border: none; background: var(--loss); color: var(--on-btn); width: 22px; height: 22px; border-radius: 50%; font-size: 12px; padding: 0; line-height: 22px; }
+    .form-msg { font-size: 13px; color: var(--loss-text); min-height: 1em; }
+
+    /* ===== 場邊紀錄畫面 ===== */
+    .band { background: var(--band); color: var(--on-band); flex-shrink: 0; }
+    .band-inner { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding-block: 6px; }
+    .hdr-left { display: flex; flex-direction: column; gap: 5px; align-items: stretch; }
+    .set-btn { border: none; border-radius: 6px; background: var(--gold); color: var(--on-gold); font-weight: 800; font-size: 13px; padding: 5px 8px; white-space: nowrap; }
+    .timer-btn { border: 1px solid var(--band-line); background: var(--band-soft); color: var(--on-band); border-radius: 6px; font-size: 12px; font-weight: 700; padding: 3px 6px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .timer-btn.running { border-color: var(--gold); color: var(--gold); }
+    .hdr-score { text-align: center; min-width: 0; }
+    .score-line { display: flex; align-items: baseline; justify-content: center; gap: 4px; line-height: 1; }
+    .score-line .num { font-family: var(--font-score); font-weight: 700; font-size: clamp(32px, 10.5vw, 46px); font-variant-numeric: tabular-nums; min-width: 1.1em; }
+    .score-line .colon { font-family: var(--font-score); font-size: clamp(24px, 8vw, 36px); opacity: 0.7; }
+    .score-line .side { font-size: 13px; font-weight: 700; opacity: 0.8; }
+    .score-sub { font-size: 11px; opacity: 0.85; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .hdr-right { display: flex; gap: 6px; }
+    .icon-btn { border: 1px solid var(--band-line); background: var(--band-soft); color: var(--on-band); border-radius: 8px; width: 46px; height: 46px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0; font-size: 20px; line-height: 1; }
+    .icon-btn small { font-size: 10px; font-weight: 700; }
+
+    .strip { position: relative; flex-shrink: 0; background: var(--surface); border-bottom: 1px solid var(--line); padding-block: 4px; min-height: 52px; }
+    .live-tl { overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+    .live-tl::-webkit-scrollbar { display: none; }
+    .live-empty { font-size: 12px; color: var(--muted); line-height: 42px; }
+    .toast {
+        position: absolute; top: 5px; bottom: 5px;
+        left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+        display: flex; align-items: center; gap: 10px; padding: 0 12px; border-radius: 8px; z-index: 3;
+        background: var(--ink); color: var(--surface); font-weight: 700; font-size: 15px; pointer-events: none;
+    }
+    .toast.score { background: var(--score); color: var(--on-btn); }
+    .toast.loss { background: var(--loss); color: var(--on-btn); }
+    .toast.banner { background: var(--band); color: var(--on-band); pointer-events: auto; }
+    .toast-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .toast-btn { margin-left: auto; border: none; border-radius: 6px; background: var(--gold); color: var(--on-gold); font-weight: 800; font-size: 13px; padding: 7px 10px; white-space: nowrap; }
+    .toast-x { border: none; background: transparent; color: inherit; font-size: 18px; padding: 4px 2px; opacity: 0.8; }
+
+    .pad { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding-block: 8px; overflow-y: auto; }
+    .sec-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; font-weight: 700; color: var(--muted); flex-shrink: 0; }
+    .sec-head .hint { font-weight: 500; }
+    .player-grid { display: grid; gap: 6px; grid-auto-rows: clamp(38px, 6.4vh, 54px); grid-auto-rows: clamp(38px, 6.4dvh, 54px); flex-shrink: 0; border-radius: 10px; }
+    .pbtn { border: 1.5px solid var(--chip-line); background: var(--chip); color: var(--ink); border-radius: 8px; font-weight: 700; font-size: 15px; line-height: 1.1; padding: 0 2px; display: flex; align-items: center; justify-content: center; text-align: center; overflow: hidden; word-break: keep-all; }
+    .pbtn.len4 { font-size: 13px; }
+    .pbtn.len5 { font-size: 11px; word-break: break-all; }
+    .pbtn.on { background: var(--chip-on); border-color: var(--chip-on); color: var(--on-chip-on); box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.28); }
+    .player-grid.nudge { animation: nudge 0.45s ease; outline: 2px solid var(--gold); outline-offset: 2px; }
+    @keyframes nudge { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-6px); } 40% { transform: translateX(6px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(3px); } }
+    @media (prefers-reduced-motion: reduce) { .player-grid.nudge { animation: none; } }
+
+    .act-head { display: grid; grid-template-columns: 1fr 4px 1fr 1fr; column-gap: 6px; font-size: 12px; font-weight: 800; flex-shrink: 0; }
+    .act-head .h-score { color: var(--score-text); grid-column: 1; }
+    .act-head .h-loss { color: var(--loss-text); grid-column: 3 / span 2; }
+    .act-grid { flex: 1 1 0; min-height: 194px; display: grid; grid-template-columns: 1fr 4px 1fr 1fr; grid-template-rows: repeat(5, minmax(34px, 1fr)); gap: 6px; }
+    .abtn { border: none; border-radius: 8px; color: var(--on-btn); font-weight: 800; font-size: 16px; line-height: 1.1; padding: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; box-shadow: 0 2px 0 rgba(0, 0, 0, 0.14); transition: opacity 0.12s; }
+    .abtn.score { background: var(--score); }
+    .abtn.loss { background: var(--loss); }
+    .abtn.score.team { background: var(--score-team); }
+    .abtn.loss.team { background: var(--loss-team); }
+    .abtn small { font-size: 10px; font-weight: 600; opacity: 0.8; }
+    .act-grid.no-player .needs-player { opacity: 0.42; }
+    .pending-btn { flex-shrink: 0; border: none; border-radius: 8px; min-height: 36px; background: var(--warn); color: var(--on-warn); font-weight: 800; font-size: 13px; }
+
+    .tally { flex-shrink: 0; background: var(--surface); border-top: 1px solid var(--line); padding-block: 5px; }
+    .tally-inner { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)); gap: 6px; align-items: stretch; }
+    .tally-label { font-size: 11px; font-weight: 700; color: var(--muted); writing-mode: vertical-rl; text-align: center; letter-spacing: 2px; }
+    .tbtn { border: none; border-radius: 8px; min-height: 38px; background: var(--tally); color: var(--on-btn); display: flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; font-size: 13px; }
+    .tbtn b { font-size: 19px; font-variant-numeric: tabular-nums; font-family: var(--font-score); }
+
+    /* 即時軌跡表（我方 / 對方兩列同一張 table，永遠對齊） */
+    .tl-table { border-collapse: collapse; }
+    .tl-table th { font-weight: 700; white-space: nowrap; }
+    .tl-table td { text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+    .tl-table tr.tl-ts th, .tl-table tr.tl-ts td { border: none; background: transparent; font-size: 8px; font-weight: 400; height: 12px; padding: 0; overflow: visible; }
+    .tl-live th { position: sticky; left: 0; z-index: 1; width: 34px; min-width: 34px; font-size: 11px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); }
+    .tl-live td { width: 24px; min-width: 24px; height: 21px; padding: 0; font-size: 12px; font-weight: 700; border: 1px solid var(--line); }
+    .tl-live tr.tl-me th, .tl-live tr.tl-me td { border-bottom: 1.5px solid var(--muted); }
+    .tl-live tr.tl-ts td { color: var(--pending-fg); }
+    .tl-live .v-me { color: var(--score-text); }
+    .tl-live .v-opp { color: var(--loss-text); }
+    .tl-live .pending { background: var(--pending-bg); color: var(--pending-fg); }
+
+    /* ===== Bottom sheet ===== */
+    .scrim { position: fixed; inset: 0; z-index: 50; background: var(--scrim); display: flex; align-items: flex-end; justify-content: center; }
+    .sheet { width: 100%; max-width: 640px; max-height: 84%; overflow-y: auto; background: var(--surface); color: var(--ink); border-radius: 16px 16px 0 0;
+        padding: 12px max(16px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+    .sheet-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .sheet-head h2 { margin: 0; font-size: 17px; }
+    .sheet-close { border: 1px solid var(--chip-line); background: var(--chip); border-radius: 20px; padding: 6px 14px; font-weight: 700; font-size: 13px; }
+    .sheet-body { display: flex; flex-direction: column; gap: 8px; }
+    .menu-item { display: flex; align-items: center; gap: 12px; min-height: 52px; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 0 14px; font-size: 16px; font-weight: 700; text-align: left; }
+    .menu-item .mi-icon { width: 24px; text-align: center; font-size: 18px; }
+    .menu-item .mi-sub { margin-left: auto; font-size: 12px; font-weight: 500; color: var(--muted); }
+    .menu-item.current { border-color: var(--chip-on); box-shadow: inset 0 0 0 1px var(--chip-on); }
+    .menu-item.danger { color: var(--loss-text); }
+    .confirm-text { font-size: 15px; line-height: 1.6; margin: 0 0 6px; }
+    .confirm-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .edit-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: center; }
+    .edit-row .input-text { padding: 9px 10px; font-size: 15px; }
+    .edit-row .btn-solid { min-height: 40px; padding: 0 12px; font-size: 14px; }
+    .sub-label { font-size: 12px; font-weight: 700; color: var(--muted); margin-top: 6px; }
+    .stat-group { display: flex; flex-direction: column; gap: 5px; }
+    .stat-row { display: grid; grid-template-columns: 5.5em minmax(0, 1fr) 2em; gap: 8px; align-items: center; font-size: 14px; }
+    .stat-bar { height: 12px; border-radius: 3px; background: var(--line); overflow: hidden; }
+    .stat-bar i { display: block; height: 100%; }
+    .stat-row b { text-align: right; font-variant-numeric: tabular-nums; }
+    .pl-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .pl-table th, .pl-table td { padding: 6px 4px; border-bottom: 1px solid var(--line); text-align: center; font-variant-numeric: tabular-nums; }
+    .pl-table th:first-child, .pl-table td:first-child { text-align: left; }
+    .pl-table .p { color: var(--score-text); font-weight: 700; }
+    .pl-table .m { color: var(--loss-text); font-weight: 700; }
+
+    /* ===== 紀錄表預覽 ===== */
+    .pv-bar { flex-shrink: 0; background: var(--band); color: var(--on-band); }
+    .pv-bar-inner { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-block: 8px; }
+    .pv-bar .pv-btn { border: 1px solid var(--band-line); background: var(--band-soft); color: var(--on-band); border-radius: 8px; min-height: 40px; padding: 0 12px; font-weight: 700; font-size: 14px; }
+    .pv-bar .pv-btn.primary { background: var(--gold); color: var(--on-gold); border-color: var(--gold); }
+    .pv-bar .pv-spacer { flex: 1; }
+    .pv-msg { width: 100%; font-size: 12px; opacity: 0.9; min-height: 0; }
+    .pv-scroll { flex: 1; overflow: auto; padding-block: 14px 24px; -webkit-overflow-scrolling: touch; -webkit-user-select: text; user-select: text; }
+
+    .img-view { position: fixed; inset: 0; z-index: 60; background: var(--bg); display: flex; flex-direction: column; }
+    .img-bar { display: flex; align-items: center; gap: 10px; padding-block: 8px; background: var(--band); color: var(--on-band); font-size: 13px; font-weight: 700; }
+    .img-bar span { flex: 1; min-width: 0; }
+    .img-bar .pv-btn { border: 1px solid var(--band-line); background: var(--band-soft); color: var(--on-band); border-radius: 8px; min-height: 40px; padding: 0 12px; font-weight: 700; }
+    .img-scroll { flex: 1; overflow: auto; padding-block: 12px; -webkit-touch-callout: default; }
+    .img-scroll img { display: block; width: 100%; height: auto; -webkit-touch-callout: default; -webkit-user-select: auto; user-select: auto; }
+
+    /* ===== 紙本紀錄表 ===== */
+    .paper { width: 1080px; margin: 0 auto; background: var(--paper); color: var(--paper-ink); padding: 18px 20px 22px; box-shadow: var(--shadow); font-family: var(--font-ui); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .paper.export { box-shadow: none; }
+    .paper .ph { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 10px; font-size: 14px; font-weight: 700; }
+    .paper .ph > div { flex: 1; }
+    .paper .ph .r { text-align: right; }
+    .paper h1 { margin: 0; font-size: 22px; text-align: center; letter-spacing: 1px; }
+    .paper .st { width: 100%; border-collapse: collapse; table-layout: fixed; border: 1.5px solid var(--paper-rule); text-align: center; }
+    .paper .st col.c-name { width: 58px; }
+    .paper .st th, .paper .st td { border: 0.5px solid var(--paper-line); padding: 3px 1px; overflow: hidden; }
+    .paper .st th { background: var(--paper-head); font-size: 11px; font-weight: 600; line-height: 1.15; }
+    .paper .st thead tr:last-child th { border-bottom: 1px solid var(--paper-rule); }
+    .paper .st td { height: 24px; vertical-align: middle; }
+    .paper .st td.nm { font-size: 12px; font-weight: 700; word-break: break-all; }
+    .paper .st .ss { border-left: 1.5px solid var(--paper-rule); }
+    .paper .st .ls { border-left: 1px solid var(--paper-rule2); }
+    .paper .st td.tm { background: var(--paper-soft); }
+    .zg-wrap { display: inline-flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 1px; line-height: 0; vertical-align: middle; }
+    .zg { width: 15px; height: 15px; display: block; }
+    .paper .tlc { margin-top: 16px; border: 1.5px solid var(--paper-rule); padding: 12px 14px; display: flex; flex-direction: column; gap: 12px; }
+    .paper .ph .r u { display: inline-block; min-width: 56px; text-align: center; text-decoration: none; border-bottom: 1px solid var(--paper-rule); }
+    .paper .tls { display: flex; align-items: stretch; gap: 8px; border-bottom: 1px dashed var(--paper-dash); padding-bottom: 10px; break-inside: avoid; page-break-inside: avoid; }
+    .paper .tls:last-child { border-bottom: none; padding-bottom: 0; }
+    .paper .tls-num { width: 22px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 800; border: 1px solid var(--paper-rule); }
+    .paper .tls .tll { flex: 1; min-width: 0; }
+    .paper .tls-score { width: 104px; flex-shrink: 0; border: 1.5px solid var(--paper-rule); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+    .paper .tls-score span { font-size: 11px; color: var(--paper-sub); }
+    .paper .tls-score b { font-size: 26px; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+    .paper .tll { display: flex; flex-direction: column; gap: 6px; }
+    .paper .tl-empty { color: var(--paper-sub); padding: 6px; }
+    .tl-paper { width: 100%; table-layout: fixed; }
+    .tl-paper th { width: 44px; font-size: 11px; background: var(--paper-label); border: 0.5px solid var(--paper-line); }
+    .tl-paper td { height: 22px; padding: 0; font-size: 12px; font-weight: 600; border: 0.5px solid var(--paper-line); }
+    .tl-paper tr.tl-me th, .tl-paper tr.tl-me td { border-bottom: 1px solid var(--paper-rule); }
+    .tl-paper tr.tl-ts td { color: var(--paper-pending-fg); }
+    .tl-paper .pending { background: var(--paper-pending); }
+
+    @media print {
+        @page { size: A4 landscape; margin: 8mm; }
+        html, body { height: auto; overflow: visible; background: #fff; }
+        .view, .scrim { display: none !important; }
+        #previewView { display: block !important; }
+        .pv-bar { display: none !important; }
+        .pv-scroll { overflow: visible; padding: 0; }
+        .paper { width: 100%; zoom: 1 !important; box-shadow: none; padding: 0; }
+    }
+</style>
+
+<!-- ============ 設定畫面 ============ -->
+<div id="setupView" class="view active">
+    <div class="setup col gutter">
+        <div class="setup-title">
+            <h1>台大化工男排紀錄系統</h1>
+            <p>場邊即時紀錄・正字紀錄表・比分軌跡</p>
+        </div>
+
+        <div class="card resume-card" id="resumeCard" hidden>
+            <div class="card-label">上次的比賽還沒結束</div>
+            <div class="note" id="resumeInfo"></div>
+            <button class="btn-solid brand" id="resumeBtn">繼續紀錄</button>
+        </div>
+
+        <div class="card">
+            <label for="oppInput">對手隊伍</label>
+            <input type="text" id="oppInput" class="input-text" placeholder="例如：宜大化材" autocomplete="off">
+        </div>
+
+        <div class="card">
+            <label for="newPlayerInput">今日登錄球員</label>
+            <div class="row">
+                <input type="text" id="newPlayerInput" class="input-text" placeholder="背號或姓名" autocomplete="off" enterkeyhint="done">
+                <button class="btn-solid" id="addPlayerBtn">新增</button>
+            </div>
+            <div class="tags" id="playerTags"></div>
+            <div class="note">名單會記在這支手機上，下次打開不用重打。</div>
+        </div>
+
+        <div class="form-msg" id="setupMsg"></div>
+        <button class="btn-solid brand btn-start" id="startBtn">開始比賽紀錄</button>
+    </div>
+</div>
+
+<!-- ============ 紀錄畫面 ============ -->
+<div id="scoringView" class="view">
+    <header class="band">
+        <div class="band-inner col gutter">
+            <div class="hdr-left">
+                <button class="set-btn" id="setBtn">第 1 局 ▾</button>
+                <button class="timer-btn" id="timerBtn">▶ 00:00</button>
+            </div>
+            <div class="hdr-score">
+                <div class="score-line">
+                    <span class="side">我</span>
+                    <span class="num" id="myScore">0</span>
+                    <span class="colon">:</span>
+                    <span class="num" id="oppScore">0</span>
+                    <span class="side">對</span>
+                </div>
+                <div class="score-sub" id="hdrSub">局數 0 : 0</div>
+            </div>
+            <div class="hdr-right">
+                <button class="icon-btn tap" id="undoBtn" aria-label="復原上一筆">↶<small>復原</small></button>
+                <button class="icon-btn" id="menuBtn" aria-label="開啟選單">☰<small>選單</small></button>
+            </div>
+        </div>
+    </header>
+
+    <section class="strip">
+        <div class="col gutter">
+            <div class="live-tl" id="liveTl"></div>
+        </div>
+        <div class="toast" id="toast" hidden></div>
+    </section>
+
+    <main class="pad col gutter">
+        <div class="player-grid" id="playerGrid" aria-label="① 這球是誰"></div>
+        <div class="act-head"><span class="h-score">② 得分</span><span class="h-loss">② 失分</span></div>
+        <div class="act-grid no-player" id="actGrid"></div>
+        <button class="pending-btn tap" id="pendingBtn">⚠ 待確認（未記到，補記為我方失分）</button>
+    </main>
+
+    <footer class="tally">
+        <div class="tally-inner col gutter">
+            <span class="tally-label">配球</span>
+            <button class="tbtn tap" data-tally="欄中">欄中 <b id="t-欄中">0</b></button>
+            <button class="tbtn tap" data-tally="背">背 <b id="t-背">0</b></button>
+            <button class="tbtn tap" data-tally="大砲">大砲 <b id="t-大砲">0</b></button>
+        </div>
+    </footer>
+</div>
+
+<!-- ============ 紀錄表預覽 / 匯出 ============ -->
+<div id="previewView" class="view">
+    <div class="pv-bar">
+        <div class="pv-bar-inner gutter">
+            <button class="pv-btn" id="pvBack">← 返回紀錄</button>
+            <span class="pv-spacer"></span>
+            <button class="pv-btn" id="pvFit">實際大小</button>
+            <button class="pv-btn primary" id="pvPng">存成圖片</button>
+            <button class="pv-btn primary" id="pvPdf" hidden>存成 PDF</button>
+            <button class="pv-btn primary" id="pvPrint" hidden>列印</button>
+            <div class="pv-msg" id="pvMsg" hidden></div>
+        </div>
+    </div>
+    <div class="pv-scroll gutter" id="pvScroll">
+        <div class="paper" id="paper"></div>
+    </div>
+</div>
+
+<!-- ============ 圖片（長按儲存） ============ -->
+<div class="img-view" id="imgView" hidden>
+    <div class="img-bar gutter">
+        <span>長按圖片 →「加入照片」或「分享」傳到 LINE</span>
+        <button class="pv-btn" id="imgClose">關閉</button>
+    </div>
+    <div class="img-scroll gutter"><img id="imgOut" alt="比賽紀錄表圖片"></div>
+</div>
+
+<!-- ============ Bottom sheet ============ -->
+<div class="scrim" id="scrim" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+        <div class="sheet-head">
+            <h2 id="sheetTitle"></h2>
+            <button class="sheet-close" id="sheetClose">關閉</button>
+        </div>
+        <div class="sheet-body" id="sheetBody"></div>
+    </div>
+</div>
+
+<script>
+    /* ==================== 設定 ==================== */
+    const STORE_KEY = 'ntuche-vb-match-v5';
+    const ROSTER_KEY = 'ntuche-vb-roster';
+    const DEFAULT_ROSTER = ['李書漢','女僕恩恩','邱太穎','邱秉謙','鄭坤澤','姚承宏','張靖灝','黃士綸','涂品宏','林以丞'];
+    // 每局勝利分數（三局兩勝：前兩局 25 分、決勝局 15 分，皆需領先 2 分）
+    const SET_POINTS = [25, 25, 15];
+    // 紀錄表上比分軌跡每一行放幾球
+    const TL_PER_LINE = 30;
+    const SCORE_KEYS = ['發球','攻擊','吊球','攔網'];
+    const LOSS_KEYS  = ['發球','接球','攻擊','防守','二傳','吊球','觸網','攔網','舉球'];
+    const LABELS = { '觸網': '觸網越界', '對手打得好': '對手好球' };
+    // 原因格 3 欄 × 5 列：左欄得分、右兩欄失分（順序與紀錄表欄位一致）
+    const ACTION_LAYOUT = [
+        ['score','發球'],    ['loss','發球'], ['loss','接球'],
+        ['score','攻擊'],    ['loss','攻擊'], ['loss','防守'],
+        ['score','吊球'],    ['loss','二傳'], ['loss','吊球'],
+        ['score','攔網'],    ['loss','觸網'], ['loss','攔網'],
+        ['score','對方失誤'], ['loss','舉球'], ['loss','對手打得好'],
+    ];
+    const TEAM_ACTIONS = ['對方失誤', '對手打得好'];
+    const ACTION_COLORS = {
+        '發球':'#5e7746','攻擊':'#73904f','吊球':'#869e5f','攔網':'#3f5530','對方失誤':'#9a843a',
+        '_失發球':'#b04a4f','_失接球':'#c4645a','_失攻擊':'#8c2333','_失防守':'#c27459',
+        '_失二傳':'#a35a66','_失吊球':'#c98069','_失觸網':'#6d1a27','_失攔網':'#9a4b38',
+        '_失舉球':'#b86f6a','_失對手打得好':'#4f2a2e'
+    };
+    const PAPER_INK = '#111111';
+    const LIBS = {
+        html2canvas: 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js',
+        jspdf: 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js'
+    };
+
+    /* ==================== 工具 ==================== */
+    const $ = s => document.querySelector(s);
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+    const label = a => LABELS[a] || a;
+    const inFrame = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+    const downloadsReady = (window.claude && typeof window.claude.use === 'function')
+        ? window.claude.use('downloads').catch(() => null)
+        : Promise.resolve(null);
+
+    function buzz() { try { if (navigator.vibrate) navigator.vibrate(15); } catch (e) {} }
+    // 場邊按鈕用 pointerdown 立即反應；鍵盤 Enter / Space 也能觸發
+    function onTap(el, cb) {
+        el.addEventListener('pointerdown', e => { if (e.button > 0) return; e.preventDefault(); buzz(); cb(e); });
+        el.addEventListener('click', e => { if (e.detail === 0) cb(e); });
+    }
+    function storeGet(k) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+    function storeSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+    function storeDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+
+    /* ==================== 狀態 ==================== */
+    let activePlayers = (() => { const r = storeGet(ROSTER_KEY); return Array.isArray(r) && r.length ? r : DEFAULT_ROSTER.slice(); })();
+    let matchData = [];
+    let currentSetIndex = 0;
+    let selectedPlayer = null;
+    let opponentName = '';
+    let matchDate = '';
+
+    let timerRunning = false, timerStartEpoch = null, timerElapsedMs = 0, timerInterval = null;
+
+    function createEmptySet() {
+        const s = { myScore:0, oppScore:0, oppErrors:0, oppGood:0, history:[], timeline:[], stats:{}, tally:{ 欄中:0, 背:0, 大砲:0 } };
+        activePlayers.forEach(p => { s.stats[p] = emptyStats(); });
+        return s;
+    }
+    function emptyStats() {
+        return {
+            score: { '發球':0,'攻擊':0,'吊球':0,'攔網':0 },
+            loss:  { '發球':0,'接球':0,'攻擊':0,'防守':0,'二傳':0,'吊球':0,'觸網':0,'攔網':0,'舉球':0 }
+        };
+    }
+    const curSet = () => matchData[currentSetIndex];
+
+    function save() {
+        if (!matchData.length) return;
+        storeSet(STORE_KEY, {
+            v: 5, opponentName, matchDate, activePlayers, matchData, currentSetIndex,
+            timerMs: getTimerMs(), timerRunning, savedAt: Date.now()
+        });
+    }
+
+    /* ==================== 計時器 ==================== */
+    function getTimerMs() { return timerRunning ? timerElapsedMs + (Date.now() - timerStartEpoch) : timerElapsedMs; }
+    function getTimerString() {
+        const total = Math.floor(getTimerMs() / 1000);
+        return `${String(Math.floor(total / 60)).padStart(2,'0')}:${String(total % 60).padStart(2,'0')}`;
+    }
+    function renderTimer() {
+        const b = $('#timerBtn');
+        b.textContent = `${timerRunning ? '⏸' : '▶'} ${getTimerString()}`;
+        b.classList.toggle('running', timerRunning);
+    }
+    function startTimer() {
+        if (timerRunning) return;
+        timerStartEpoch = Date.now(); timerRunning = true;
+        clearInterval(timerInterval); timerInterval = setInterval(renderTimer, 500);
+        renderTimer();
+    }
+    function pauseTimer() {
+        if (!timerRunning) return;
+        timerElapsedMs = getTimerMs(); timerRunning = false;
+        clearInterval(timerInterval); timerInterval = null;
+        renderTimer();
+    }
+    onTap($('#timerBtn'), () => { timerRunning ? pauseTimer() : startTimer(); save(); });
+
+    /* ==================== 畫面切換 ==================== */
+    function showView(id) {
+        document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === id));
+    }
+
+    // 比賽中讓螢幕不要自動關閉（瀏覽器不支援就算了）
+    let wakeLock = null;
+    async function keepAwake() {
+        try {
+            if ('wakeLock' in navigator && document.visibilityState === 'visible' && !wakeLock) {
+                wakeLock = await navigator.wakeLock.request('screen');
+                wakeLock.addEventListener('release', () => { wakeLock = null; });
+            }
+        } catch (e) { wakeLock = null; }
+    }
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') save();
+        else if (matchData.length) keepAwake();
+    });
+    window.addEventListener('pagehide', save);
+
+    /* ==================== 設定畫面 ==================== */
+    function renderSetup() {
+        const c = $('#playerTags');
+        c.innerHTML = '';
+        activePlayers.forEach(p => {
+            const tag = document.createElement('div');
+            tag.className = 'tag';
+            tag.innerHTML = `<span>${esc(p)}</span><button class="tag-x" aria-label="移除 ${esc(p)}">✕</button>`;
+            tag.querySelector('button').addEventListener('click', () => { activePlayers = activePlayers.filter(x => x !== p); renderSetup(); });
+            c.appendChild(tag);
+        });
+        const saved = storeGet(STORE_KEY);
+        const has = saved && Array.isArray(saved.matchData) && saved.matchData.some(s => s.timeline && s.timeline.length);
+        $('#resumeCard').hidden = !has;
+        if (has) {
+            const i = saved.currentSetIndex || 0, s = saved.matchData[i];
+            $('#resumeInfo').textContent = `${saved.matchDate}・對 ${saved.opponentName}・第 ${i + 1} 局 ${s.myScore} : ${s.oppScore}`;
+        }
+    }
+    function addSetupPlayer() {
+        const inp = $('#newPlayerInput');
+        const v = inp.value.trim();
+        if (!v) return;
+        if (activePlayers.includes(v)) { $('#setupMsg').textContent = `「${v}」已經在名單裡`; return; }
+        activePlayers.push(v); inp.value = ''; $('#setupMsg').textContent = '';
+        renderSetup(); inp.focus();
+    }
+    $('#addPlayerBtn').addEventListener('click', addSetupPlayer);
+    $('#newPlayerInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addSetupPlayer(); } });
+
+    $('#startBtn').addEventListener('click', () => {
+        if (!activePlayers.length) { $('#setupMsg').textContent = '請至少新增一名球員'; return; }
+        if (!$('#resumeCard').hidden) {
+            askConfirm('開始新比賽會清掉上次還沒結束的紀錄。確定要開新的嗎？', '開新比賽', startNewMatch);
+        } else startNewMatch();
+    });
+    $('#resumeBtn').addEventListener('click', () => { const s = storeGet(STORE_KEY); if (s) resumeMatch(s); });
+
+    function startNewMatch() {
+        opponentName = $('#oppInput').value.trim() || '未填寫';
+        const d = new Date();
+        matchDate = `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
+        matchData = [createEmptySet(), createEmptySet(), createEmptySet()];
+        currentSetIndex = 0; selectedPlayer = null;
+        pauseTimer(); timerElapsedMs = 0;
+        storeSet(ROSTER_KEY, activePlayers);
+        enterScoring();
+        save();
+    }
+    function resumeMatch(s) {
+        opponentName = s.opponentName || '未填寫';
+        matchDate = s.matchDate || '';
+        activePlayers = s.activePlayers || activePlayers;
+        matchData = s.matchData;
+        currentSetIndex = s.currentSetIndex || 0;
+        matchData.forEach(set => {
+            activePlayers.forEach(p => { if (!set.stats[p]) set.stats[p] = emptyStats(); });
+            if (!set.tally) set.tally = { 欄中:0, 背:0, 大砲:0 };
+        });
+        selectedPlayer = null;
+        pauseTimer();
+        timerElapsedMs = s.timerMs || 0;
+        // 頁面被關掉時計時器還在跑：兩小時內回來就把中間經過的時間補上並繼續跑
+        if (s.timerRunning) {
+            const gap = Date.now() - (s.savedAt || Date.now());
+            if (gap >= 0 && gap < 2 * 3600 * 1000) { timerElapsedMs += gap; startTimer(); }
+        }
+        enterScoring();
+    }
+    function enterScoring() {
+        buildPlayerGrid();
+        renderAll();
+        renderTimer();
+        showView('scoringView');
+        keepAwake();
+    }
+
+    /* ==================== 球員格 / 原因格 ==================== */
+    function buildPlayerGrid() {
+        const g = $('#playerGrid');
+        const n = activePlayers.length;
+        const rows = n <= 5 ? 1 : n <= 10 ? 2 : n <= 15 ? 3 : 4;
+        g.style.gridTemplateColumns = `repeat(${Math.max(1, Math.ceil(n / rows))}, minmax(0, 1fr))`;
+        g.innerHTML = '';
+        activePlayers.forEach(p => {
+            const b = document.createElement('button');
+            b.className = 'pbtn tap' + (p.length >= 5 ? ' len5' : p.length === 4 ? ' len4' : '');
+            b.textContent = p;
+            b.dataset.player = p;
+            onTap(b, () => { selectedPlayer = selectedPlayer === p ? null : p; renderPick(); });
+            g.appendChild(b);
+        });
+        renderPick();
+    }
+    function renderPick() {
+        document.querySelectorAll('#playerGrid .pbtn').forEach(b => b.classList.toggle('on', b.dataset.player === selectedPlayer));
+        $('#actGrid').classList.toggle('no-player', !selectedPlayer);
+    }
+    (function buildActGrid() {
+        const g = $('#actGrid');
+        let lossCol = 3;
+        ACTION_LAYOUT.forEach(([type, action], i) => {
+            const b = document.createElement('button');
+            const team = TEAM_ACTIONS.includes(action);
+            b.className = `abtn tap ${type}${team ? ' team' : ' needs-player'}`;
+            b.innerHTML = team ? `${label(action)}<small>免選人</small>` : label(action);
+            b.style.gridRow = String(Math.floor(i / 3) + 1);
+            if (type === 'score') b.style.gridColumn = '1';
+            else { b.style.gridColumn = String(lossCol); lossCol = lossCol === 3 ? 4 : 3; }
+            onTap(b, () => record(type, action));
+            g.appendChild(b);
+        });
+    })();
+
+    /* ==================== 紀錄核心 ==================== */
+    function record(type, action) {
+        const cs = curSet();
+        const team = TEAM_ACTIONS.includes(action);
+        if (!team && !selectedPlayer) { nudgePlayers(); return; }
+        const wasOver = !!setWinner(cs, currentSetIndex);
+        let entry;
+        if (action === '對方失誤') {
+            cs.myScore++; cs.oppErrors++;
+            entry = { team:'me', type:'score', action, player:'OPP', isPending:false };
+            cs.timeline.push({ team:'me', val:cs.myScore, isPending:false, timestamp:null });
+        } else if (action === '對手打得好') {
+            cs.oppScore++; cs.oppGood++;
+            entry = { team:'opp', type:'loss', action, player:'OPP', isPending:false };
+            cs.timeline.push({ team:'opp', val:cs.oppScore, isPending:false, timestamp:null });
+        } else {
+            if (!cs.stats[selectedPlayer]) cs.stats[selectedPlayer] = emptyStats();
+            if (type === 'score') {
+                cs.myScore++; cs.stats[selectedPlayer].score[action]++;
+                entry = { team:'me', type:'score', action, player:selectedPlayer, isPending:false };
+                cs.timeline.push({ team:'me', val:cs.myScore, isPending:false, timestamp:null });
+            } else {
+                cs.oppScore++; cs.stats[selectedPlayer].loss[action]++;
+                entry = { team:'opp', type:'loss', action, player:selectedPlayer, isPending:false };
+                cs.timeline.push({ team:'opp', val:cs.oppScore, isPending:false, timestamp:null });
+            }
+        }
+        cs.history.push(entry);
+        // 記完就取消選取，避免下一球忘了換人記到同一個人身上
+        selectedPlayer = null;
+        renderPick();
+        afterChange();
+        if (!wasOver && setWinner(cs, currentSetIndex)) showSetEnd();
+        else showToast(`${type === 'score' ? '＋' : '－'} ${describe(entry)}　${cs.myScore} : ${cs.oppScore}`, type);
+    }
+    function describe(h) {
+        if (h.kind === 'tally') return `配球 ${h.key}`;
+        if (h.player === 'PENDING') return '待確認';
+        if (h.player === 'OPP') return label(h.action);
+        return `${h.player}・${label(h.action)}${h.type === 'score' ? '得分' : '失分'}`;
+    }
+
+    onTap($('#pendingBtn'), () => {
+        const cs = curSet();
+        const wasOver = !!setWinner(cs, currentSetIndex);
+        const ts = timerRunning ? getTimerString() : null;
+        cs.oppScore++;
+        cs.history.push({ team:'opp', type:'loss', action:'待確認', player:'PENDING', isPending:true });
+        cs.timeline.push({ team:'opp', val:cs.oppScore, isPending:true, timestamp:ts });
+        afterChange();
+        if (!wasOver && setWinner(cs, currentSetIndex)) showSetEnd();
+        else showToast(`－ 待確認${ts ? '（' + ts + '）' : ''}　${cs.myScore} : ${cs.oppScore}`, 'loss');
+    });
+
+    document.querySelectorAll('[data-tally]').forEach(b => {
+        onTap(b, () => {
+            const key = b.dataset.tally, cs = curSet();
+            cs.tally[key]++;
+            cs.history.push({ kind:'tally', key });
+            afterChange();
+            showToast(`配球 ${key}：${cs.tally[key]}`);
+        });
+    });
+
+    onTap($('#undoBtn'), () => {
+        const cs = curSet();
+        const last = cs.history.pop();
+        if (!last) { showToast('這一局沒有可以復原的紀錄'); return; }
+        if (last.kind === 'tally') {
+            cs.tally[last.key] = Math.max(0, cs.tally[last.key] - 1);
+        } else {
+            cs.timeline.pop();
+            if (last.team === 'me') {
+                cs.myScore--;
+                if (last.player === 'OPP') cs.oppErrors--;
+                else cs.stats[last.player].score[last.action]--;
+            } else {
+                cs.oppScore--;
+                if (last.player === 'OPP') cs.oppGood--;
+                else if (last.player !== 'PENDING') cs.stats[last.player].loss[last.action]--;
+            }
+        }
+        afterChange();
+        showToast(`已復原：${describe(last)}`);
+    });
+
+    function switchSet(i) {
+        currentSetIndex = i; selectedPlayer = null;
+        renderPick(); afterChange(); hideToast();
+    }
+
+    /* ==================== 局數規則 ==================== */
+    // 一局要打到 SET_POINTS 分且領先 2 分才算結束；進行中的局不計入局數
+    function setWinner(set, i) {
+        const target = SET_POINTS[i];
+        if (set.myScore >= target && set.myScore - set.oppScore >= 2) return 'me';
+        if (set.oppScore >= target && set.oppScore - set.myScore >= 2) return 'opp';
+        return null;
+    }
+    function calcSetTally() {
+        let me = 0, opp = 0;
+        matchData.forEach((s, i) => { const w = setWinner(s, i); if (w === 'me') me++; else if (w === 'opp') opp++; });
+        return { me, opp };
+    }
+    function showSetEnd() {
+        const cs = curSet(), t = calcSetTally();
+        const head = `第 ${currentSetIndex + 1} 局結束 ${cs.myScore} : ${cs.oppScore}`;
+        if (t.me >= 2 || t.opp >= 2 || currentSetIndex >= matchData.length - 1) {
+            showBanner(`${head}・比賽 ${t.me} : ${t.opp}`, '看紀錄表', openPreview);
+        } else {
+            const next = currentSetIndex + 1;
+            showBanner(head, `進入第 ${next + 1} 局 →`, () => switchSet(next));
+        }
+    }
+
+    /* ==================== 畫面更新 ==================== */
+    function afterChange() { renderAll(); save(); }
+    function renderAll() {
+        if (!matchData.length) return;
+        const cs = curSet(), t = calcSetTally();
+        $('#myScore').textContent = cs.myScore;
+        $('#oppScore').textContent = cs.oppScore;
+        $('#setBtn').textContent = `第 ${currentSetIndex + 1} 局 ▾`;
+        $('#hdrSub').textContent = `局數 ${t.me} : ${t.opp}・對 ${opponentName}`;
+        ['欄中','背','大砲'].forEach(k => { $('#t-' + k).textContent = cs.tally[k]; });
+        renderLiveTimeline();
+    }
+
+    /* ==================== 比分軌跡 ====================
+       記法（流水比分）：
+       - 一欄代表一球（一個 rally），由左到右依時間排列。
+       - 我方得分 → 在「我方」列寫上我方得分後的累計分數；「對方」列同一欄留白。反之亦然。
+       - 所以連續得分會在同一列出現連號（例如 6 7 8 9），對方那列在這幾欄全空。
+       - 換行時「我方」「對方」兩列必須在同一球一起換行，否則上下欄位對不起來。
+         這裡每一行都是獨立的一張 table（同時含兩列），從結構上保證對齊。 */
+    function timelineTable(items, padTo, cls) {
+        const showTs = items.some(t => t.isPending && t.timestamp);
+        let tsRow = '', meRow = '', oppRow = '';
+        items.forEach(t => {
+            if (t.team === 'me') {
+                tsRow  += '<td></td>';
+                meRow  += `<td class="v-me">${t.val}</td>`;
+                oppRow += '<td></td>';
+            } else {
+                tsRow  += `<td>${(t.isPending && t.timestamp) ? t.timestamp : ''}</td>`;
+                meRow  += '<td></td>';
+                oppRow += `<td class="v-opp${t.isPending ? ' pending' : ''}">${t.val}</td>`;
+            }
+        });
+        for (let i = items.length; i < padTo; i++) { tsRow += '<td></td>'; meRow += '<td></td>'; oppRow += '<td></td>'; }
+        let html = `<table class="tl-table ${cls}">`;
+        if (showTs) html += `<tr class="tl-ts"><th>時間</th>${tsRow}</tr>`;
+        html += `<tr class="tl-me"><th>我方</th>${meRow}</tr>`;
+        html += `<tr class="tl-opp"><th>對方</th>${oppRow}</tr>`;
+        return html + '</table>';
+    }
+    function renderLiveTimeline() {
+        const el = $('#liveTl'), cs = curSet();
+        if (!cs.timeline.length) {
+            el.innerHTML = `<div class="live-empty">第 ${currentSetIndex + 1} 局還沒有紀錄。先點球員，再點得分或失分原因。</div>`;
+            return;
+        }
+        el.innerHTML = timelineTable(cs.timeline, 0, 'tl-live');
+        requestAnimationFrame(() => { el.scrollLeft = el.scrollWidth; });
+    }
+
+    /* ==================== 提示條 ==================== */
+    let toastTimer = null;
+    function showToast(text, tone) {
+        const t = $('#toast');
+        clearTimeout(toastTimer);
+        t.className = 'toast' + (tone ? ' ' + tone : '');
+        t.innerHTML = `<span class="toast-text">${esc(text)}</span>`;
+        t.hidden = false;
+        toastTimer = setTimeout(hideToast, 1600);
+    }
+    function showBanner(text, btnLabel, onBtn) {
+        const t = $('#toast');
+        clearTimeout(toastTimer);
+        t.className = 'toast banner';
+        t.innerHTML = `<span class="toast-text">${esc(text)}</span><button class="toast-btn">${esc(btnLabel)}</button><button class="toast-x" aria-label="關閉">✕</button>`;
+        t.querySelector('.toast-btn').addEventListener('click', () => { hideToast(); onBtn(); });
+        t.querySelector('.toast-x').addEventListener('click', hideToast);
+        t.hidden = false;
+    }
+    function hideToast() { clearTimeout(toastTimer); $('#toast').hidden = true; }
+    function nudgePlayers() {
+        const g = $('#playerGrid');
+        g.classList.remove('nudge'); void g.offsetWidth; g.classList.add('nudge');
+        setTimeout(() => g.classList.remove('nudge'), 600);
+        showToast('先點「這球是誰」，再點原因');
+    }
+
+    /* ==================== Bottom sheet ==================== */
+    function openSheet(title, render) {
+        $('#sheetTitle').textContent = title;
+        const body = $('#sheetBody');
+        body.innerHTML = '';
+        render(body);
+        $('#scrim').hidden = false;
+    }
+    function closeSheet() { $('#scrim').hidden = true; $('#sheetBody').innerHTML = ''; }
+    $('#scrim').addEventListener('click', e => { if (e.target.id === 'scrim') closeSheet(); });
+    $('#sheetClose').addEventListener('click', closeSheet);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#scrim').hidden) closeSheet(); });
+
+    function menuItem(icon, text, sub, onClick, extra) {
+        const b = document.createElement('button');
+        b.className = 'menu-item' + (extra ? ' ' + extra : '');
+        b.innerHTML = `<span class="mi-icon">${icon}</span><span>${esc(text)}</span>${sub ? `<span class="mi-sub">${esc(sub)}</span>` : ''}`;
+        b.addEventListener('click', onClick);
+        return b;
+    }
+    function askConfirm(message, okLabel, onOk) {
+        openSheet('請確認', body => {
+            const p = document.createElement('p');
+            p.className = 'confirm-text'; p.textContent = message;
+            const row = document.createElement('div');
+            row.className = 'confirm-row';
+            row.innerHTML = `<button class="btn-solid ghost">取消</button><button class="btn-solid danger">${esc(okLabel)}</button>`;
+            row.children[0].addEventListener('click', closeSheet);
+            row.children[1].addEventListener('click', () => { closeSheet(); onOk(); });
+            body.append(p, row);
+        });
+    }
+
+    $('#menuBtn').addEventListener('click', () => {
+        openSheet('選單', body => {
+            body.append(
+                menuItem('📋', '檢視紀錄表 / 匯出', '正字表＋比分軌跡', openPreview),
+                menuItem('📊', '本局統計', `第 ${currentSetIndex + 1} 局`, openStats),
+                menuItem('✏️', '球員管理', `${activePlayers.length} 人`, openPlayers),
+                menuItem('↺', '重置本局配球紀錄', '', () => askConfirm(`把第 ${currentSetIndex + 1} 局的配球（欄中／背／大砲）全部歸零？`, '歸零', () => {
+                    const cs = curSet();
+                    cs.tally = { 欄中:0, 背:0, 大砲:0 };
+                    cs.history = cs.history.filter(h => h.kind !== 'tally');
+                    afterChange(); showToast('本局配球已歸零');
+                })),
+                menuItem('🏁', '結束比賽，回到設定頁', '', () => askConfirm('結束後這場紀錄會從手機上清除。請先到「檢視紀錄表」存成圖片或 PDF。', '結束比賽', () => {
+                    storeDel(STORE_KEY); pauseTimer(); matchData = []; hideToast();
+                    renderSetup(); showView('setupView');
+                }), 'danger')
+            );
+        });
+    });
+
+    $('#setBtn').addEventListener('click', () => {
+        openSheet('切換局數', body => {
+            matchData.forEach((s, i) => {
+                const w = setWinner(s, i);
+                const status = w === 'me' ? '贏' : w === 'opp' ? '輸' : s.timeline.length ? '進行中' : '未開始';
+                body.append(menuItem(String(i + 1), `第 ${i + 1} 局　${s.myScore} : ${s.oppScore}`, status, () => { closeSheet(); switchSet(i); }, i === currentSetIndex ? 'current' : ''));
+            });
+        });
+    });
+
+    /* ==================== 本局統計 ==================== */
+    function aggregateSet(cs) {
+        const score = { '發球':0,'攻擊':0,'吊球':0,'攔網':0,'對方失誤':cs.oppErrors };
+        const loss  = { '發球':0,'接球':0,'攻擊':0,'防守':0,'二傳':0,'吊球':0,'觸網':0,'攔網':0,'舉球':0,'對手打得好':cs.oppGood, '待確認':0 };
+        cs.history.forEach(h => { if (h.player === 'PENDING') loss['待確認']++; });
+        activePlayers.forEach(p => {
+            const s = cs.stats[p]; if (!s) return;
+            for (const k in s.score) score[k] += s.score[k];
+            for (const k in s.loss)  loss[k]  += s.loss[k];
+        });
+        return { score, loss };
+    }
+    function statGroup(title, data, isLoss) {
+        const wrap = document.createElement('div');
+        wrap.className = 'stat-group';
+        const total = Object.values(data).reduce((a, b) => a + b, 0);
+        const max = Math.max(1, ...Object.values(data));
+        let html = `<div class="sub-label">${title} ${total}</div>`;
+        for (const [k, v] of Object.entries(data)) {
+            const col = ACTION_COLORS[isLoss ? '_失' + k : k] || '#d9a62e';
+            html += `<div class="stat-row"><span>${esc(label(k))}</span><span class="stat-bar"><i style="width:${(v / max) * 100}%;background:${col}"></i></span><b>${v}</b></div>`;
+        }
+        wrap.innerHTML = html;
+        return wrap;
+    }
+    function openStats() {
+        const cs = curSet(), agg = aggregateSet(cs);
+        openSheet(`第 ${currentSetIndex + 1} 局統計　${cs.myScore} : ${cs.oppScore}`, body => {
+            body.append(statGroup('得分', agg.score, false), statGroup('失分', agg.loss, true));
+            const rows = activePlayers.map(p => {
+                const s = cs.stats[p] || emptyStats();
+                const plus = Object.values(s.score).reduce((a, b) => a + b, 0);
+                const minus = Object.values(s.loss).reduce((a, b) => a + b, 0);
+                return { p, plus, minus };
+            }).filter(r => r.plus || r.minus).sort((a, b) => (b.plus - b.minus) - (a.plus - a.minus));
+            const t = document.createElement('div');
+            t.innerHTML = `<div class="sub-label">個人</div>` + (rows.length
+                ? `<table class="pl-table"><tr><th>球員</th><th>得分</th><th>失分</th><th>淨值</th></tr>${rows.map(r => `<tr><td>${esc(r.p)}</td><td class="p">${r.plus}</td><td class="m">${r.minus}</td><td>${r.plus - r.minus > 0 ? '+' : ''}${r.plus - r.minus}</td></tr>`).join('')}</table>`
+                : `<div class="note">這一局還沒有個人紀錄。</div>`);
+            body.append(t);
+        });
+    }
+
+    /* ==================== 球員管理 ==================== */
+    function playerHasRecords(p) {
+        return matchData.some(set => { const s = set.stats[p]; return s && (Object.values(s.score).some(Boolean) || Object.values(s.loss).some(Boolean)); });
+    }
+    function openPlayers() {
+        openSheet('球員管理', body => {
+            body.insertAdjacentHTML('beforeend', '<div class="sub-label">改名（已記錄的數據會跟著一起改）</div>');
+            activePlayers.forEach((p, idx) => {
+                const row = document.createElement('div');
+                row.className = 'edit-row';
+                row.innerHTML = `<input type="text" class="input-text" id="pe-${idx}" value="${esc(p)}" autocomplete="off" aria-label="${esc(p)} 的新名字">
+                    <button class="btn-solid brand">改名</button>
+                    <button class="btn-solid ghost" ${playerHasRecords(p) ? 'disabled title="已有紀錄，不能移除"' : ''}>移除</button>`;
+                const inp = row.querySelector('input');
+                row.children[1].addEventListener('click', () => renamePlayer(p, inp.value.trim()));
+                const rm = row.children[2];
+                if (rm.disabled) rm.style.opacity = '0.4';
+                else rm.addEventListener('click', () => removePlayer(p));
+                body.append(row);
+            });
+            body.insertAdjacentHTML('beforeend', '<div class="sub-label">新增球員</div>');
+            const add = document.createElement('div');
+            add.className = 'row';
+            add.innerHTML = `<input type="text" class="input-text" id="pe-new" placeholder="背號或姓名" autocomplete="off"><button class="btn-solid">新增</button>`;
+            const ni = add.querySelector('input');
+            const doAdd = () => addPlayer(ni.value.trim());
+            add.querySelector('button').addEventListener('click', doAdd);
+            ni.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
+            const msg = document.createElement('div');
+            msg.className = 'form-msg'; msg.id = 'peMsg';
+            body.append(add, msg);
+        });
+    }
+    function rosterChanged() {
+        storeSet(ROSTER_KEY, activePlayers);
+        buildPlayerGrid(); afterChange(); openPlayers();
+    }
+    function renamePlayer(oldName, newName) {
+        if (!newName || newName === oldName) return;
+        if (activePlayers.includes(newName)) { $('#peMsg').textContent = `已經有「${newName}」了`; return; }
+        const idx = activePlayers.indexOf(oldName);
+        if (idx !== -1) activePlayers[idx] = newName;
+        matchData.forEach(set => {
+            if (set.stats[oldName] !== undefined) { set.stats[newName] = set.stats[oldName]; delete set.stats[oldName]; }
+            set.history.forEach(h => { if (h.player === oldName) h.player = newName; });
+        });
+        if (selectedPlayer === oldName) selectedPlayer = newName;
+        rosterChanged();
+    }
+    function addPlayer(v) {
+        if (!v) return;
+        if (activePlayers.includes(v)) { $('#peMsg').textContent = `「${v}」已經在名單裡`; return; }
+        activePlayers.push(v);
+        matchData.forEach(set => { if (!set.stats[v]) set.stats[v] = emptyStats(); });
+        rosterChanged();
+    }
+    function removePlayer(p) {
+        activePlayers = activePlayers.filter(x => x !== p);
+        matchData.forEach(set => { delete set.stats[p]; });
+        if (selectedPlayer === p) selectedPlayer = null;
+        rosterChanged();
+    }
+
+    /* ==================== 紀錄表（紙本） ==================== */
+    // 正字記號：每 5 次一個「正」，筆順 一 → 丨 → 一(右短橫) → 丨(左短豎) → 一(底橫)
+    // 線條屬性寫在 SVG 本身，存成圖片時才不會掉
+    const ZHENG_STROKES = ['M3 3.5H17', 'M10 3.5V16.5', 'M10 10H15.5', 'M5 10V16.5', 'M2 16.5H18'];
+    function zhengGlyph(strokes) {
+        return `<svg class="zg" width="15" height="15" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="${ZHENG_STROKES.slice(0, strokes).join('')}" fill="none" stroke="${PAPER_INK}" stroke-width="2.2" stroke-linecap="square"/></svg>`;
+    }
+    function zhengTally(n) {
+        if (!n) return '';
+        let html = '';
+        for (let i = 0; i < Math.floor(n / 5); i++) html += zhengGlyph(5);
+        if (n % 5) html += zhengGlyph(n % 5);
+        return `<span class="zg-wrap" title="${n}">${html}</span>`;
+    }
+    function buildSheet(paper) {
+        const v = s => s.split('').join('<br>');
+        const rows = activePlayers.length;
+        let sub = '';
+        for (let i = 0; i < 3; i++) {
+            sub += SCORE_KEYS.map((k, j) => `<th${j === 0 ? ' class="ss"' : ''}>${v(k)}</th>`).join('') + `<th>${v('對方失誤')}</th>`;
+            sub += LOSS_KEYS.map((k, j) => `<th${j === 0 ? ' class="ls"' : ''}>${v(k)}</th>`).join('') + `<th>${v('對手好球')}</th>`;
+        }
+        let body = '';
+        activePlayers.forEach((p, idx) => {
+            body += `<tr><td class="nm">${esc(p)}</td>`;
+            matchData.forEach(set => {
+                const ps = set.stats[p] || emptyStats();
+                SCORE_KEYS.forEach((k, j) => { body += `<td${j === 0 ? ' class="ss"' : ''}>${zhengTally(ps.score[k])}</td>`; });
+                if (idx === 0) body += `<td rowspan="${rows}" class="tm">${zhengTally(set.oppErrors)}</td>`;
+                LOSS_KEYS.forEach((k, j) => { body += `<td${j === 0 ? ' class="ls"' : ''}>${zhengTally(ps.loss[k])}</td>`; });
+                if (idx === 0) body += `<td rowspan="${rows}" class="tm">${zhengTally(set.oppGood)}</td>`;
+            });
+            body += '</tr>';
+        });
+
+        // 比分軌跡：三局都印出來（像紙本表格），每局至少兩行，右邊是該局比數
+        let tl = '';
+        matchData.forEach((set, i) => {
+            const nLines = Math.max(2, Math.ceil(set.timeline.length / TL_PER_LINE));
+            let lines = '';
+            for (let l = 0; l < nLines; l++) {
+                lines += timelineTable(set.timeline.slice(l * TL_PER_LINE, (l + 1) * TL_PER_LINE), TL_PER_LINE, 'tl-paper');
+            }
+            const score = set.timeline.length ? `${set.myScore} : ${set.oppScore}` : ':';
+            tl += `<div class="tls"><div class="tls-num">${i + 1}</div><div class="tll">${lines}</div><div class="tls-score"><span>比數</span><b>${score}</b></div></div>`;
+        });
+
+        const [y, mo, d] = (matchDate || '').split('/');
+        const dateZh = y ? `${y} 年 ${mo} 月 ${d} 日` : '　　年　　月　　日';
+        const tally = calcSetTally();
+        const matchScore = matchData.some(s => s.timeline.length) ? `${tally.me} : ${tally.opp}` : '';
+        paper.innerHTML = `
+            <div class="ph"><div>${dateZh}</div><h1>台大化工男排比賽紀錄表</h1>
+                <div class="r">對手：${esc(opponentName)}　比數：<u>${matchScore}</u>　紀錄：<u></u></div></div>
+            <table class="st">
+                <colgroup><col class="c-name">${'<col>'.repeat(45)}</colgroup>
+                <thead>
+                    <tr><th rowspan="3">局數<br><br>姓名</th><th colspan="15" class="ss">1</th><th colspan="15" class="ss">2</th><th colspan="15" class="ss">3</th></tr>
+                    <tr>${'<th colspan="5" class="ss">得分</th><th colspan="10" class="ls">失分</th>'.repeat(3)}</tr>
+                    <tr>${sub}</tr>
+                </thead>
+                <tbody>${body}</tbody>
+            </table>
+            <div class="tlc">${tl}</div>`;
+    }
+
+    /* ==================== 預覽 / 匯出 ==================== */
+    let fitToScreen = true;
+    function fitPaper() {
+        const paper = $('#paper'), scroll = $('#pvScroll');
+        const cs = getComputedStyle(scroll);
+        const avail = scroll.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+        paper.style.zoom = fitToScreen ? String(Math.min(1, avail / 1080)) : '1';
+        $('#pvFit').textContent = fitToScreen ? '實際大小' : '符合螢幕';
+    }
+    window.addEventListener('resize', () => { if ($('#previewView').classList.contains('active')) fitPaper(); });
+    $('#pvFit').addEventListener('click', () => { fitToScreen = !fitToScreen; fitPaper(); });
+
+    function openPreview() {
+        closeSheet(); hideToast();
+        buildSheet($('#paper'));
+        setPvMsg('');
+        showView('previewView');
+        fitPaper();
+        $('#pvScroll').scrollTop = 0;
+    }
+    $('#pvBack').addEventListener('click', () => showView('scoringView'));
+    $('#pvPrint').addEventListener('click', () => window.print());
+
+    // 能存檔（Claude App／電腦）就直接存；手機 Safari 等不能存檔的畫面，改成顯示圖片讓人長按儲存
+    $('#pvPrint').hidden = inFrame;
+    if (!inFrame) $('#pvPdf').hidden = false;
+    downloadsReady.then(dl => { if (dl) $('#pvPdf').hidden = false; });
+    function showImage(canvas) {
+        $('#imgOut').src = canvas.toDataURL('image/png');
+        $('#imgView').hidden = false;
+        setPvMsg('');
+    }
+    $('#imgClose').addEventListener('click', () => { $('#imgView').hidden = true; $('#imgOut').removeAttribute('src'); });
+
+    function setPvMsg(text) { const m = $('#pvMsg'); m.textContent = text; m.hidden = !text; }
+
+    const scriptLoads = {};
+    function loadScript(src) {
+        if (!scriptLoads[src]) {
+            scriptLoads[src] = new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = src; s.async = true;
+                s.onload = resolve;
+                s.onerror = () => { delete scriptLoads[src]; s.remove(); reject(new Error('load failed')); };
+                document.head.appendChild(s);
+            });
+        }
+        return scriptLoads[src];
+    }
+    async function renderSheetCanvas() {
+        await loadScript(LIBS.html2canvas);
+        const host = document.createElement('div');
+        host.style.cssText = 'position:absolute;left:-20000px;top:0;width:1080px;';
+        const paper = document.createElement('div');
+        paper.className = 'paper export';
+        buildSheet(paper);
+        host.appendChild(paper);
+        document.body.appendChild(host);
+        try {
+            return await window.html2canvas(paper, { scale: 2, backgroundColor: '#ffffff', logging: false, useCORS: true });
+        } finally {
+            host.remove();
+        }
+    }
+    function fileBase() {
+        const d = (matchDate || '').replace(/\//g, '-');
+        return `化工男排紀錄_vs${opponentName}_${d}`.replace(/[\\/:*?"<>|\s]+/g, '');
+    }
+    // 回傳 false 表示這個畫面存不了檔
+    async function saveFile(filename, blob) {
+        const dl = await downloadsReady;
+        if (dl) {
+            try {
+                await dl.save({ filename, data: blob });
+                setPvMsg(`已存檔：${filename}`);
+            } catch (e) {
+                const code = e && e.code;
+                if (code === 'declined') setPvMsg('已取消存檔');
+                else if (code === 'rate_limited') setPvMsg('上一個存檔視窗還開著，處理完再按一次');
+                else return false;
+            }
+            return true;
+        }
+        if (inFrame) return false;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = filename;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        setPvMsg(`已下載：${filename}`);
+        return true;
+    }
+    async function exportImage(kind) {
+        const btns = [$('#pvPng'), $('#pvPdf')];
+        btns.forEach(b => { b.disabled = true; });
+        setPvMsg(kind === 'pdf' ? '正在產生 PDF…' : '正在產生圖片…');
+        try {
+            const canvas = await renderSheetCanvas();
+            if (kind === 'png') {
+                const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+                if (!(await saveFile(fileBase() + '.png', blob))) showImage(canvas);
+            } else {
+                await loadScript(LIBS.jspdf);
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+                const pw = 297, ph = 210, m = 8, iw = pw - 2 * m, ih = ph - 2 * m;
+                const ratio = canvas.height / canvas.width;
+                let w = iw, h = iw * ratio;
+                if (h > ih) { h = ih; w = ih / ratio; }
+                doc.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', (pw - w) / 2, m, w, h);
+                if (!(await saveFile(fileBase() + '.pdf', doc.output('blob')))) {
+                    showImage(canvas);
+                    setPvMsg('這個畫面不能存 PDF，已改成圖片');
+                }
+            }
+        } catch (e) {
+            setPvMsg('產生檔案失敗：網路沒有連上時無法匯出，連上後再試一次');
+        } finally {
+            btns.forEach(b => { b.disabled = false; });
+        }
+    }
+    $('#pvPng').addEventListener('click', () => exportImage('png'));
+    $('#pvPdf').addEventListener('click', () => exportImage('pdf'));
+
+    /* ==================== 啟動 ==================== */
+    (function boot() {
+        renderSetup();
+        // 比賽進行到一半被重新整理／切走：12 小時內直接回到紀錄畫面
+        const s = storeGet(STORE_KEY);
+        if (s && Array.isArray(s.matchData) && s.savedAt && Date.now() - s.savedAt < 12 * 3600 * 1000) resumeMatch(s);
+    })();
+</script>
