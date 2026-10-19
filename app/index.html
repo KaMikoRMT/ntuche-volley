@@ -1234,7 +1234,7 @@ function blankStat(pid) {
         serve: { pt: 0, err: 0, total: null, rate: null, ace: null },
         block: { pt: 0, err: 0 },
         receive: { good: 0, run: 0, bad: 0, err: 0, total: 0, rate: null },
-        dig: { ok: 0, no: 0, good: 0, run: 0, bad: 0, total: 0, rate: null, goodRate: null },
+        dig: { ok: 0, no: 0, good: 0, run: 0, bad: 0, total: 0, rate: null, goodRate: null, types: {} },   // types: { spike: { ok, no }, … }；沒分類的歸在 ''
         setQ: { good: 0, bad: 0, err: 0, total: 0, rate: null },   // 這位球員「舉出去」的球的品質（舉球員；隊伍欄位是全隊）
         setTo: 0
     };
@@ -1272,6 +1272,7 @@ function addStat(a, b) {
     if (b.serve.total !== null) a.serve.total = (a.serve.total || 0) + b.serve.total;
     ['good', 'run', 'bad', 'err'].forEach(k => { a.receive[k] += b.receive[k]; });
     ['ok', 'no', 'good', 'run', 'bad'].forEach(k => { a.dig[k] += b.dig[k]; });
+    Object.keys(b.dig.types || {}).forEach(t => { const x = a.dig.types[t] || (a.dig.types[t] = { ok: 0, no: 0 }); x.ok += b.dig.types[t].ok; x.no += b.dig.types[t].no; });
     ['good', 'bad', 'err'].forEach(k => { a.setQ[k] += b.setQ ? b.setQ[k] : 0; });
     a.setTo += b.setTo || 0;
     return a;
@@ -1395,6 +1396,8 @@ function computeMatchStats(match, db, opts) {
                 digs.forEach(d => {
                     const k = d.ok ? 'ok' : 'no', q = d.ok ? normQuality(d.q) : '';
                     P(d.p).dig[k]++; team.dig[k]++;
+                    const ty = DIG_TYPES.some(t => t[0] === d.type) ? d.type : '';
+                    [P(d.p).dig, team.dig].forEach(x => { (x.types[ty] || (x.types[ty] = { ok: 0, no: 0 }))[k]++; });
                     if (q) { P(d.p).dig[q]++; team.dig[q]++; }
                 });
                 // 配球：這一球舉給誰（被配球的人），位置用「那一局」確認的位置
@@ -1672,7 +1675,7 @@ function distinctEvents(db) {
 const QUALITY_LEVELS = [['good', '到位'], ['run', '需要跑動'], ['bad', '壞球']];
 const RECEIVE_GRADES = QUALITY_LEVELS.concat([['err', '失誤']]);
 const SET_GRADES = [['good', '到位'], ['bad', '不到位'], ['err', '失誤']];
-const DIG_TYPES = [['spike', '接扣'], ['tip', '接吊'], ['cover', 'Cover'], ['free', '接嗆司']];   // 舊版覆盤的起球類型（新版改記品質，舊資料仍會顯示）
+const DIG_TYPES = [['spike', '接扣'], ['tip', '接吊'], ['cover', 'Cover'], ['free', '接嗆司']];   // 防守的類型；起球再加品質
 // 配球「位置」的類別與順序；沒設定位置的歸在 ''
 const DIST_POSITIONS = ['OH', 'MB', 'OPP', 'S', ''];
 function distPosLabel(code) { return code === '' ? '未設定位置' : (code === 'S' ? '舉球員自己' : code === 'OPP' ? '舉對（背）' : posLabel(code)); }
@@ -1726,8 +1729,8 @@ function reviewEntryOf(match, rid) {
     return e;
 }
 function reviewSetReceive(match, rid, p, grade) { reviewEntryOf(match, rid).receive = p ? { p, grade: normGrade(grade) } : null; }
-// 防守：ok = 起球；起球可以再給品質 q（到位／需要跑動／壞球），沒起不用
-function reviewAddDig(match, rid, p, ok, q) { reviewEntryOf(match, rid).digs.push({ p, ok: !!ok, q: ok ? normQuality(q) : '' }); }
+// 防守：type = 接扣／接吊／Cover／接嗆司（可不填）；ok = 起球；起球可以再給品質 q（到位／需要跑動／壞球），沒起不用
+function reviewAddDig(match, rid, p, ok, q, type) { const d = { p, ok: !!ok, q: ok ? normQuality(q) : '' }; if (DIG_TYPES.some(t => t[0] === type)) d.type = type; reviewEntryOf(match, rid).digs.push(d); }
 // 配球：這一球舉給誰（可多次，例如同一球連續兩次進攻），再評這一球舉得如何（到位／不到位／失誤）
 function reviewAddSetTo(match, rid, p, q) { const e = reviewEntryOf(match, rid); if (!Array.isArray(e.setTo)) e.setTo = []; e.setTo.push({ p, q: normSetQ(q) }); }
 function reviewRemoveSetTo(match, rid, i) { const e = reviewEntryOf(match, rid); if (Array.isArray(e.setTo)) e.setTo.splice(i, 1); }
@@ -2418,6 +2421,16 @@ function runSelfTests() {
         eq([d.ok, d.no, d.good, d.run, d.bad, d.rate, d.goodRate], [3, 1, 1, 1, 0, 0.75, 0.5], '起球品質只算起球、沒分級的不進品質率');
         eq(m.review[ev[0].id].digs[3].q, '', '沒起不存品質');
         eq(normGrade('poor'), 'run'); eq(normGrade('xxx'), 'err'); eq(normQuality('good'), 'good'); eq(normQuality('spike'), '');
+    });
+    T('防守類型：接扣／接吊／Cover／接嗆司各自統計起球與沒起，沒分類的歸在空字串', () => {
+        const m = fixtureMatch();
+        const ev = m.sets[0].log.filter(e => e.out !== 'cont');
+        reviewAddDig(m, ev[0].id, 'D', true, 'good', 'spike'); reviewAddDig(m, ev[0].id, 'D', false, '', 'spike'); reviewAddDig(m, ev[0].id, 'D', true, 'run', 'free'); reviewAddDig(m, ev[0].id, 'D', true, 'bad', 'zzz');
+        const s = computeMatchStats(m, null);
+        eq(s.team.dig.types, { spike: { ok: 1, no: 1 }, free: { ok: 1, no: 0 }, '': { ok: 1, no: 0 } });
+        eq(m.review[ev[0].id].digs[0].type, 'spike'); eq('type' in m.review[ev[0].id].digs[3], false, '不認得的類型不存');
+        const db = newDb(); db.matches[m.id] = m;
+        eq(computeAggregate(db, [m, m]).team.dig.types.spike, { ok: 2, no: 2 }, '跨場累計');
     });
     T('每局位置：局內確認的 → 名單快照的主位置 → 球員資料的主位置；沿用上一局', () => {
         const m = newMatch({ formatKey: 'bo3', roster: [{ id: 'Y', name: 'Y', number: '1', positions: ['OH', 'OPP'] }, { id: 'Z', name: 'Z', number: '2', positions: ['MB'] }, { id: 'W', name: 'W', number: '3', positions: [] }] });
@@ -4255,6 +4268,7 @@ function vizCardHtml(t, scope) {
     h += vsBar('接發', [{ cls: 'good', n: rc.good, label: '到位' }, { cls: 'mid', n: rc.run, label: '需要跑動' }, { cls: 'bad', n: rc.bad, label: '壞球' }, { cls: 'err', n: rc.err, label: '失誤' }], { tall: true, empty: '還沒有逐球覆盤' });
     h += vsBar('防守起球', [{ cls: 'good', n: dg.ok, label: '起球' }, { cls: 'bad', n: dg.no, label: '沒起' }], { tall: true, empty: '還沒有逐球覆盤' });
     if (dg.good + dg.run + dg.bad) h += vsBar('起球品質', [{ cls: 'good', n: dg.good, label: '到位' }, { cls: 'mid', n: dg.run, label: '需要跑動' }, { cls: 'bad', n: dg.bad, label: '壞球' }], { tall: true });
+    DIG_TYPES.forEach(ty => { const x = dg.types[ty[0]]; if (x && x.ok + x.no) h += vsBar(`防守：${ty[1]}`, [{ cls: 'good', n: x.ok, label: '起球' }, { cls: 'bad', n: x.no, label: '沒起' }], { tall: true }); });
     return h + '<div class="note">左邊 = 好的結果，右邊 = 壞的結果；百分比 = 佔該項全部次數的比例。</div></div>';
 }
 // 隊伍切換（A隊／B隊）：數據頁、跨場分析、首頁比較都用同一個
@@ -4472,11 +4486,13 @@ function renderReview() {
     h += `<button type="button" class="chip" data-action="open-positions" data-i="${item.setIdx}">調整第 ${item.setIdx + 1} 局的位置</button></div>`;
     h += `<div class="rv-sec"><b>防守 <small>（起球：球被接起、比賽繼續；沒起：直接落地或出界）</small></b>`;
     const digs = e.digs || [];
-    const qName = q => (QUALITY_LEVELS.find(x => x[0] === q) || [0, ''])[1];
-    if (digs.length) h += `<div class="chips">${digs.map((d, i) => `<button class="chip on" data-action="rv-dig-del" data-i="${i}">${esc(rvName(m, d.p))}・${d.ok ? '起球' : '沒起'}${d.q ? '・' + esc(qName(d.q)) : ''}${d.type ? '・' + esc((DIG_TYPES.find(t => t[0] === d.type) || [0, ''])[1]) : ''} ✕</button>`).join('')}</div>`;
-    if (!rv.dig) h += '<div class="rv-two"><button class="good" data-action="rv-dig-start" data-ok="1">＋ 起球</button><button class="bad" data-action="rv-dig-start" data-ok="0">＋ 沒起</button></div>';
-    else if (!rv.dig.p) h += `<div class="note">${rv.dig.ok ? '起球' : '沒起'}的是誰？</div>${rvChips(m, item, 'rv-dig-p', null)}<button class="btn-solid ghost small" data-action="rv-dig-cancel">取消</button>`;
-    else h += `<div class="note">${esc(rvName(m, rv.dig.p))}這一球起得如何？（到位：可以用上手舉球；需要跑動：舉球員要明顯移動；壞球：組織不了進攻）</div><div class="rv-grades three">${QUALITY_LEVELS.map(q => `<button class="${q[0]}" data-action="rv-dig-q" data-q="${q[0]}">${q[1]}</button>`).join('')}</div><button class="btn-solid ghost small" data-action="rv-dig-cancel">取消</button>`;
+    const qName = q => (QUALITY_LEVELS.find(x => x[0] === q) || [0, ''])[1], typeName = t => (DIG_TYPES.find(x => x[0] === t) || [0, ''])[1];
+    if (digs.length) h += `<div class="chips">${digs.map((d, i) => `<button class="chip on" data-action="rv-dig-del" data-i="${i}">${esc(rvName(m, d.p))}・${d.type ? '・' + esc(typeName(d.type)) : ''}・${d.ok ? '起球' : '沒起'}${d.q ? '・' + esc(qName(d.q)) : ''} ✕</button>`).join('')}</div>`;
+    const dg = rv.dig, cancelBtn = '<button class="btn-solid ghost small" data-action="rv-dig-cancel">取消</button>';
+    if (!dg) h += '<div class="rv-two"><button class="good" data-action="rv-dig-start" data-ok="1">＋ 起球</button><button class="bad" data-action="rv-dig-start" data-ok="0">＋ 沒起</button></div>';
+    else if (!dg.p) h += `<div class="note">${dg.ok ? '起球' : '沒起'}的是誰？</div>${rvChips(m, item, 'rv-dig-p', null)}${cancelBtn}`;
+    else if (dg.type === null) h += `<div class="note">${esc(rvName(m, dg.p))}${dg.ok ? '起' : '沒起'}的是哪一種球？</div><div class="rv-grades">${DIG_TYPES.map(t => `<button class="run" data-action="rv-dig-type" data-t="${t[0]}">${t[1]}</button>`).join('')}</div><div class="row"><button class="btn-solid ghost small" data-action="rv-dig-type" data-t="">不分類</button>${cancelBtn}</div>`;
+    else h += `<div class="note">${esc(rvName(m, dg.p))}${dg.type ? '・' + esc(typeName(dg.type)) : ''}這一球起得如何？（到位：可以用上手舉球；需要跑動：舉球員要明顯移動；壞球：組織不了進攻）</div><div class="rv-grades three">${QUALITY_LEVELS.map(q => `<button class="${q[0]}" data-action="rv-dig-q" data-q="${q[0]}">${q[1]}</button>`).join('')}</div>${cancelBtn}`;
     h += '</div>';
     const dug = e.attacksDug || [];
     h += `<div class="rv-sec"><b>攻擊被守起 <small>（賽中沒記到的；可多次）</small></b>${dug.length ? `<div class="chips">${dug.map((pid, i) => `<button class="chip on" data-action="rv-dug-del" data-i="${i}">${esc(rvName(m, pid))} ✕</button>`).join('')}</div>` : ''}${rvChips(m, item, 'rv-dug-p', null)}</div>`;
@@ -4493,15 +4509,18 @@ function rvRid() { return ui.review.order[ui.review.idx]; }
 ACT['rv-recv-p'] = el => { ui.review.recvP = ui.review.recvP === el.dataset.id ? null : el.dataset.id; render(); };
 ACT['rv-grade'] = el => { const p = ui.review.recvP, rid = rvRid(); ui.review.recvP = null; rvCommit(m => reviewSetReceive(m, rid, p, el.dataset.g)); };
 ACT['rv-recv-clear'] = () => { const rid = rvRid(); rvCommit(m => reviewSetReceive(m, rid, null)); };
-ACT['rv-dig-start'] = el => { ui.review.dig = { ok: el.dataset.ok === '1', p: null }; render(); };
+ACT['rv-dig-start'] = el => { ui.review.dig = { ok: el.dataset.ok === '1', p: null, type: null }; render(); };
 ACT['rv-dig-cancel'] = () => { ui.review.dig = null; render(); };
-ACT['rv-dig-p'] = el => {
-    const d = ui.review.dig, rid = rvRid(), p = el.dataset.id;
-    if (d.ok) { d.p = p; render(); return; }          // 起球要再選品質；沒起選完人就記下
+ACT['rv-dig-p'] = el => { ui.review.dig.p = el.dataset.id; render(); };
+// 類型選完：沒起就直接記下；起球再選品質
+ACT['rv-dig-type'] = el => {
+    const d = ui.review.dig, rid = rvRid();
+    d.type = el.dataset.t || '';
+    if (d.ok) { render(); return; }
     ui.review.dig = null;
-    rvCommit(m => reviewAddDig(m, rid, p, false));
+    rvCommit(m => reviewAddDig(m, rid, d.p, false, '', d.type));
 };
-ACT['rv-dig-q'] = el => { const d = ui.review.dig, rid = rvRid(), q = el.dataset.q; ui.review.dig = null; rvCommit(m => reviewAddDig(m, rid, d.p, true, q)); };
+ACT['rv-dig-q'] = el => { const d = ui.review.dig, rid = rvRid(), q = el.dataset.q; ui.review.dig = null; rvCommit(m => reviewAddDig(m, rid, d.p, true, q, d.type)); };
 ACT['rv-sto-p'] = el => { ui.review.sto = { p: el.dataset.id }; render(); };
 ACT['rv-sto-cancel'] = () => { ui.review.sto = null; render(); };
 ACT['rv-sto-q'] = el => { const d = ui.review.sto, rid = rvRid(), q = el.dataset.q; if (!d) return; ui.review.sto = null; rvCommit(m => reviewAddSetTo(m, rid, d.p, q)); };
