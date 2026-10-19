@@ -580,6 +580,35 @@ function lineupComplete(l) {
     for (let i = 1; i <= 6; i++) if (!l.slots[i]) return false;
     return true;
 }
+// 這個球員在陣容的哪一格：1～6、'L'（自由）或 null
+function lineupFind(l, pid) {
+    for (let i = 1; i <= 6; i++) if (l.slots[i] === pid) return i;
+    return l.libero === pid ? 'L' : null;
+}
+// 把球員放進選取的格子（1～6 或 'L'）；他已經在別格就搬過來，原本那格的人換到他原來的位置
+function lineupAssign(l, slot, pid) {
+    const from = lineupFind(l, pid);
+    const occupant = slot === 'L' ? l.libero : l.slots[slot];
+    if (slot === 'L') l.libero = pid; else l.slots[slot] = pid;
+    if (from !== null && from !== slot) {
+        if (from === 'L') l.libero = occupant || null;
+        else if (occupant) l.slots[from] = occupant;
+        else delete l.slots[from];
+    }
+    return l;
+}
+function lineupClear(l, slot) {
+    if (slot === 'L') l.libero = null; else delete l.slots[slot];
+    return l;
+}
+// 從 from 的下一格開始找第一個空的號位（1～6）；都滿了回傳 null
+function nextEmptySlot(l, from) {
+    for (let k = 1; k <= 6; k++) {
+        const i = ((Number(from) || 0) + k - 1) % 6 + 1;
+        if (!l.slots[i]) return i;
+    }
+    return null;
+}
 function emptySet(no) { return { no, firstServe: null, lineup: null, log: [] }; }
 function rosterEntry(p) { return { playerId: p.id, name: p.name, number: p.number, positions: (p.positions || []).slice() }; }
 function newMatch(o) {
@@ -1728,6 +1757,20 @@ function runSelfTests() {
         eq(nA.defaultLineup.slots, { 1: p2.id }, '預設陣容只留還在隊上的人');
         eq(nextSeasonName('114-2'), '115-1');
     });
+    T('陣容編輯：放入、搬位、對調、自由球員、清除', () => {
+        const l = newLineup({}, null);
+        lineupAssign(l, 1, 'a'); lineupAssign(l, 2, 'b');
+        eq(nextEmptySlot(l, 2), 3); eq(nextEmptySlot(l, 6), 3, '繞回來找第一個空格');
+        lineupAssign(l, 2, 'a');
+        eq([l.slots[1], l.slots[2]], ['b', 'a'], '已在 1 號位的 a 放到 2 號位，原本的 b 換到 1 號位');
+        lineupAssign(l, 'L', 'a');
+        eq([l.slots[1], l.slots[2], l.libero], ['b', undefined, 'a'], '搬去自由球員，原位置空出來');
+        lineupAssign(l, 1, 'a');
+        eq([l.slots[1], l.libero], ['a', 'b'], '自由球員與 1 號位對調');
+        lineupClear(l, 1); eq(l.slots[1], undefined);
+        for (let i = 1; i <= 6; i++) lineupAssign(l, i, 'p' + i);
+        eq(nextEmptySlot(l, 1), null); ok(lineupComplete(l));
+    });
     T('快速匯入：貼上 12 行名單正確建立', () => {
         const text = ['14 姚承宏 OH', '1 邱太穎 舉球', '#5 李書漢 MB', '6 張靖灝 OPP', '9 涂品宏 自由', '12 黃士綸', '鄭坤澤 3 大砲', '8,邱秉謙,攔中/大砲', '10\t林以丞\tOH', '11 陳宇翔 S', '13 劉品豪 背', '15 王冠廷 L', ''].join('\n');
         const rows = parseRosterText(text);
@@ -2167,23 +2210,317 @@ function render() {
 }
 Store.subscribe(() => render());
 
-/* ===== VIEW_TEAMS（P1 暫時版：只能新增與列出球員；P2 換成完整的隊伍管理） ===== */
-function viewTeamsMin() {
-    const list = sortPlayers(Object.values(DB.players));
-    return `<div class="page-inner col gutter">
-        <div class="page-title"><h1>球員庫</h1><p>全部球員（不分隊）</p></div>
-        <div class="card"><label>新增球員</label>
-            <div class="row"><input class="input-text" style="flex:0 0 70px" id="npNum" placeholder="背號" inputmode="numeric" autocomplete="off"><input class="input-text" id="npName" placeholder="姓名" autocomplete="off" data-enter="add-player-min"><button class="btn-solid" data-action="add-player-min">新增</button></div>
-            <div class="form-msg" id="npMsg"></div></div>
-        ${list.length ? `<div class="list">${list.map(p => `<div class="list-row"><span class="lr-num">${esc(p.number || '–')}</span><div class="lr-main"><span class="lr-title">${esc(p.name)}</span></div></div>`).join('')}</div>` : '<div class="empty">還沒有球員。</div>'}
-    </div>`;
+/* ===== 陣容編輯元件（隊伍預設陣容、賽前先發、下一局先發、修改目前號位共用） =====
+   ui.le = { lineup, sel, candidates:[playerId…] }；先點一格，再點下面的球員放進去 */
+function leInit(lineup, candidates) {
+    const l = cloneLineup(lineup) || newLineup({}, null);
+    ui.le = { lineup: l, sel: nextEmptySlot(l, 0) || 1, candidates };
 }
-ACT['add-player-min'] = () => {
-    const name = $('#npName').value.trim(), number = $('#npNum').value.trim();
-    if (!name) { $('#npMsg').textContent = '請輸入姓名'; return; }
-    commit(db => { addPlayerTo(db, { name, number }); });
+function lePlayer(pid) { return DB.players[pid] || null; }
+function leSlotHtml(le, slot, label) {
+    const pid = slot === 'L' ? le.lineup.libero : le.lineup.slots[slot];
+    const p = pid ? lePlayer(pid) : null;
+    return `<button type="button" class="le-slot${p ? '' : ' empty'}${le.sel === slot ? ' sel' : ''}" data-action="le-slot" data-slot="${slot}"><small>${label}</small>${p ? `${esc(p.name)}` : '選擇'}</button>`;
+}
+function lineupEditorHtml() {
+    const le = ui.le;
+    const row = slots => `<div class="le-court">${slots.map(s => leSlotHtml(le, s, `${s} 號位`)).join('')}</div>`;
+    const chips = le.candidates.map(pid => {
+        const p = lePlayer(pid);
+        if (!p) return '';
+        const at = lineupFind(le.lineup, pid);
+        return `<button type="button" class="chip${at !== null ? ' on' : ''}" data-action="le-pick" data-id="${esc(pid)}">${esc(p.name)}${at !== null ? `<small>${at === 'L' ? '自由' : at + '號'}</small>` : ''}</button>`;
+    }).join('');
+    const selPid = le.sel === 'L' ? le.lineup.libero : le.lineup.slots[le.sel];
+    return `<div class="sub-label">前排</div>${row([4, 3, 2])}
+        <div class="sub-label">後排</div>${row([5, 6, 1])}
+        <div class="sub-label">自由球員（不算在 1～6 號位，不會發球）</div><div class="le-court"><div class="le-libero">${leSlotHtml(le, 'L', '自由')}</div></div>
+        <div class="sub-label">選好一格，再點下面的球員放進去${selPid ? '' : ''}</div>
+        <div class="chips">${chips || '<span class="note">沒有可以選的球員。</span>'}</div>
+        ${selPid ? '<button type="button" class="btn-solid ghost small" data-action="le-clear">清除這一格</button>' : ''}`;
+}
+ACT['le-slot'] = el => { ui.le.sel = el.dataset.slot === 'L' ? 'L' : Number(el.dataset.slot); renderSheet(); };
+ACT['le-pick'] = el => {
+    const le = ui.le;
+    lineupAssign(le.lineup, le.sel, el.dataset.id);
+    const nxt = nextEmptySlot(le.lineup, le.sel === 'L' ? 6 : le.sel);
+    if (nxt) le.sel = nxt;
+    else if (!le.lineup.libero) le.sel = 'L';
+    renderSheet();
 };
-TAB_VIEWS.teams = viewTeamsMin;
+ACT['le-clear'] = () => { lineupClear(ui.le.lineup, ui.le.sel); renderSheet(); };
+
+/* ===== VIEW_TEAMS：隊伍管理（球員庫＋賽季與隊伍） ===== */
+const STATUS_FILTERS = [{ value: 'active', label: '在隊' }, { value: 'graduated', label: '已畢業' }, { value: 'archived', label: '封存' }, { value: 'all', label: '全部' }];
+function currentSeason() {
+    const list = seasonsSorted(DB);
+    if (!list.length) return null;
+    return DB.seasons[ui.teams.seasonId] || list[0];
+}
+function activeMembers(team) {
+    return sortPlayers(team.memberIds.map(id => DB.players[id]).filter(p => p && p.status === 'active'));
+}
+function playerSubline(p) {
+    const parts = [];
+    if (p.positions.length) parts.push(p.positions.map(posLabel).join('/'));
+    if (p.entryYear) parts.push(`${p.entryYear} 入學`);
+    const h = playerTeamHistory(DB, p.id)[0];
+    if (h) parts.push(`${h.season ? h.season.name + ' ' : ''}${h.team.name}`);
+    return parts.join('・') || '尚無資料';
+}
+function libListHtml() {
+    const q = ui.teams.search.trim().toLowerCase(), f = ui.teams.filter;
+    const list = sortPlayers(Object.values(DB.players)).filter(p => {
+        if (f !== 'all' && p.status !== f) return false;
+        if (!q) return true;
+        return p.name.toLowerCase().indexOf(q) !== -1 || String(p.number).indexOf(q) !== -1;
+    });
+    if (!list.length) return `<div class="empty">${Object.keys(DB.players).length ? '沒有符合的球員。' : '還沒有球員。<br>按「＋ 新增球員」，或用「快速匯入名單」一次貼上全隊。'}</div>`;
+    return `<div class="list">${list.map(p => `<button class="list-row${p.status === 'active' ? '' : ' dim'}" data-action="open-player" data-id="${esc(p.id)}">
+        <span class="lr-num">${esc(p.number || '–')}</span>
+        <span class="lr-main"><span class="lr-title">${esc(p.name)}${p.status !== 'active' ? ` <span class="tagx">${PLAYER_STATUS[p.status]}</span>` : ''}</span><span class="lr-sub">${esc(playerSubline(p))}</span></span></button>`).join('')}</div>`;
+}
+function viewTeams() {
+    const t = ui.teams;
+    let h = `<div class="page-inner col gutter">
+        <div class="page-title"><h1>隊伍管理</h1><p>球員是長期存在的個人；升隊只是換所屬隊伍，歷史數據跟著走</p></div>
+        ${segHtml([{ value: 'library', label: '球員庫' }, { value: 'seasons', label: '賽季與隊伍' }], t.sub, 'teams-sub')}`;
+    if (t.sub === 'library') {
+        h += `<div class="row"><button class="btn-solid" style="flex:1" data-action="new-player">＋ 新增球員</button><button class="btn-solid ghost" style="flex:1" data-action="open-roster-import" data-team="">快速匯入名單</button></div>
+            <input class="input-text" id="libSearch" placeholder="搜尋姓名或背號" autocomplete="off" value="${esc(t.search)}" data-live="lib-search">
+            <div class="chips" id="libFilter">${chipsHtml(STATUS_FILTERS, [t.filter], 'lib-filter')}</div>
+            <div id="libList">${libListHtml()}</div>`;
+    } else h += viewSeasons();
+    return h + '</div>';
+}
+ACT['teams-sub'] = el => { ui.teams.sub = el.dataset.v; render(); };
+ACT['lib-filter'] = el => { ui.teams.filter = el.dataset.v; render(); };
+ACT['lib-search'] = el => { ui.teams.search = el.value; $('#libList').innerHTML = libListHtml(); };
+TAB_VIEWS.teams = viewTeams;
+
+/* ----- 賽季與隊伍 ----- */
+function viewSeasons() {
+    const seasons = seasonsSorted(DB), cur = currentSeason();
+    if (!cur) return `<div class="empty">還沒有賽季。<br>先建立一個賽季（例如 114-1），系統會自動建立 A隊、B隊。</div>
+        <button class="btn-solid brand btn-start" data-action="new-season">＋ 新增賽季</button>`;
+    const teams = teamsOfSeason(DB, cur.id);
+    let h = `<div class="row"><select class="input-text" data-field="seasonSel" data-live="season-select" aria-label="賽季">${seasons.map(s => `<option value="${esc(s.id)}"${s.id === cur.id ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select>
+        <button class="btn-solid ghost" data-action="new-season">＋ 新增賽季</button></div>`;
+    h += `<div class="teamcols">${teams.map(team => teamColHtml(team, teams)).join('')}</div>`;
+    h += '<div class="note">升隊：按球員旁的「→A」「→B」，球員會從另一隊移過來（同一賽季只會在一隊）。✕ 是移出這一隊，不會刪除球員。</div>';
+    return h;
+}
+function teamColHtml(team, teams) {
+    const members = team.memberIds.map(id => DB.players[id]).filter(p => p && p.status !== 'archived');
+    const others = teams.filter(x => x.id !== team.id);
+    const rows = sortPlayers(members).map(p => `<div class="mrow"><span class="mn">${playerLine(p)}${p.status === 'graduated' ? ' <span class="tagx">畢</span>' : ''}</span>
+        ${others.slice(0, 1).map(o => `<button data-action="move-member" data-id="${esc(p.id)}" data-to="${esc(o.id)}" aria-label="移到${esc(o.name)}">→${esc(o.name.replace('隊', ''))}</button>`).join('')}
+        <button class="x" data-action="remove-member" data-id="${esc(p.id)}" data-team="${esc(team.id)}" aria-label="移出${esc(team.name)}">✕</button></div>`).join('');
+    const lu = team.defaultLineup;
+    const luText = lu ? `${Object.keys(lu.slots).length}/6${lu.libero ? ' ＋自由' : ''}` : '未設定';
+    return `<div class="teamcol"><h3>${esc(team.name)} <small>${members.length} 人</small></h3>
+        ${rows || '<div class="note">還沒有成員</div>'}
+        <button class="btn-solid ghost small block" data-action="add-member-open" data-team="${esc(team.id)}">＋ 加入球員</button>
+        <button class="btn-solid ghost small block" data-action="open-roster-import" data-team="${esc(team.id)}">匯入名單</button>
+        <button class="btn-solid ghost small block" data-action="open-lineup" data-team="${esc(team.id)}">預設陣容：${luText}</button></div>`;
+}
+ACT['season-select'] = el => { ui.teams.seasonId = el.value; render(); };
+ACT['move-member'] = el => {
+    const to = DB.teams[el.dataset.to], p = DB.players[el.dataset.id];
+    commit(db => { moveMemberIn(db, el.dataset.id, el.dataset.to); });
+    if (to && p) gtoast(`${p.name} 已移到 ${to.name}`);
+};
+ACT['remove-member'] = el => {
+    const p = DB.players[el.dataset.id], t = DB.teams[el.dataset.team];
+    if (!p || !t) return;
+    askConfirm(`把 ${p.name} 移出 ${t.name}？（球員資料與歷史紀錄都不會刪除）`, '移出', () => { commit(db => { removeMemberIn(db, p.id, t.id); }); }, false);
+};
+
+/* ----- 新增賽季 ----- */
+ACT['new-season'] = () => {
+    const cur = currentSeason();
+    ui.fields.nsName = cur ? nextSeasonName(cur.name) : '';
+    ui.fields.nsDate = dateStr();
+    openSheet('newSeason', { mode: cur ? 'copy' : 'blank', fromId: cur ? cur.id : null, msg: '' });
+};
+SHEETS.newSeason = d => {
+    const src = d.fromId ? DB.seasons[d.fromId] : null;
+    return {
+        title: '新增賽季',
+        html: `<div class="field"><span>賽季名稱</span><input class="input-text" data-field="nsName" value="${esc(F('nsName', ''))}" placeholder="例如 114-2" autocomplete="off"></div>
+            <div class="field"><span>開始日期</span><input type="date" class="input-text" data-field="nsDate" value="${esc(F('nsDate', dateStr()))}"></div>
+            ${src ? `<div class="field"><span>內容</span>${segHtml([{ value: 'copy', label: `複製「${src.name}」` }, { value: 'blank', label: '空白' }], d.mode, 'ns-mode')}
+                <div class="note">${d.mode === 'copy' ? '會複製兩隊與在隊的成員（已畢業、封存的不帶），再個別調整。' : '只建立空的 A隊、B隊。'}</div></div>` : '<div class="note">會自動建立 A隊、B隊。</div>'}
+            <div class="form-msg">${esc(d.msg || '')}</div>
+            <button class="btn-solid brand block" data-action="ns-create">建立賽季</button>`
+    };
+};
+ACT['ns-mode'] = el => { ui.sheet.mode = el.dataset.v; renderSheet(); };
+ACT['ns-create'] = () => {
+    const d = ui.sheet, name = String(F('nsName', '')).trim();
+    if (!name) { d.msg = '請輸入賽季名稱'; renderSheet(); return; }
+    if (Object.values(DB.seasons).some(s => s.name === name)) { d.msg = `已經有「${name}」這個賽季了`; renderSheet(); return; }
+    let id = null;
+    commit(db => {
+        const f = { name, startDate: F('nsDate', dateStr()) };
+        const s = d.mode === 'copy' && d.fromId && db.seasons[d.fromId] ? copySeasonIn(db, d.fromId, f) : addSeasonTo(db, f);
+        id = s.id;
+    });
+    ui.teams.seasonId = id; ui.teams.sub = 'seasons';
+    closeSheet();
+    gtoast(`已建立 ${name}`);
+};
+
+/* ----- 加入球員到某隊 ----- */
+ACT['add-member-open'] = el => openSheet('addMember', { teamId: el.dataset.team });
+SHEETS.addMember = d => {
+    const team = DB.teams[d.teamId];
+    if (!team) return { title: '加入球員', html: '' };
+    const sibs = teamsOfSeason(DB, team.seasonId);
+    const list = selectablePlayers(DB).filter(p => team.memberIds.indexOf(p.id) === -1);
+    const where = p => { const o = sibs.find(t => t.id !== team.id && t.memberIds.indexOf(p.id) !== -1); return o ? `目前在${o.name}，會移過來` : ''; };
+    return {
+        title: `加入球員・${team.name}`,
+        html: list.length ? `<div class="list">${list.map(p => `<button class="list-row" data-action="add-member" data-id="${esc(p.id)}" data-team="${esc(team.id)}">
+            <span class="lr-num">${esc(p.number || '–')}</span><span class="lr-main"><span class="lr-title">${esc(p.name)}</span><span class="lr-sub">${esc(where(p) || playerSubline(p))}</span></span><span class="tagx">＋</span></button>`).join('')}</div>
+            <button class="btn-solid brand block" data-action="sheet-close">完成</button>`
+            : '<div class="empty">沒有可以加入的球員。<br>到「球員庫」新增，或用「快速匯入名單」。</div><button class="btn-solid brand block" data-action="sheet-close">知道了</button>'
+    };
+};
+ACT['add-member'] = el => { commit(db => { moveMemberIn(db, el.dataset.id, el.dataset.team); }); };
+
+/* ----- 預設陣容 ----- */
+ACT['open-lineup'] = el => {
+    const team = DB.teams[el.dataset.team];
+    if (!team) return;
+    leInit(team.defaultLineup, activeMembers(team).map(p => p.id));
+    openSheet('teamLineup', { teamId: team.id });
+};
+SHEETS.teamLineup = d => {
+    const team = DB.teams[d.teamId];
+    return {
+        title: `預設陣容・${team ? team.name : ''}`, sub: '5-1',
+        html: `<div class="note">開新比賽時會自動帶入這組先發；賽前還能再調整，不會改到這裡。</div>${lineupEditorHtml()}
+            <div class="confirm-row"><button class="btn-solid ghost" data-action="lineup-team-clear">清除預設陣容</button><button class="btn-solid brand" data-action="lineup-team-save">儲存</button></div>`
+    };
+};
+ACT['lineup-team-save'] = () => {
+    const d = ui.sheet, l = ui.le.lineup;
+    const empty = !Object.keys(l.slots).length && !l.libero;
+    commit(db => { const t = db.teams[d.teamId]; t.defaultLineup = empty ? null : cloneLineup(l); touch(t); });
+    closeSheet(); gtoast('已儲存預設陣容');
+};
+ACT['lineup-team-clear'] = () => {
+    const d = ui.sheet;
+    commit(db => { const t = db.teams[d.teamId]; t.defaultLineup = null; touch(t); });
+    closeSheet(); gtoast('已清除預設陣容');
+};
+
+/* ----- 球員卡：新增／編輯／封存 ----- */
+function openPlayerSheet(id) {
+    const p = id ? DB.players[id] : null;
+    ui.fields.pfName = p ? p.name : '';
+    ui.fields.pfNumber = p ? p.number : '';
+    ui.fields.pfYear = p && p.entryYear ? String(p.entryYear) : '';
+    ui.fields.pfNote = p ? p.note : '';
+    ui.fields.pfStatus = p ? p.status : 'active';
+    openSheet('player', { id: id || null, positions: p ? p.positions.slice() : [], msg: '' });
+}
+ACT['open-player'] = el => openPlayerSheet(el.dataset.id);
+ACT['new-player'] = () => openPlayerSheet(null);
+SHEETS.player = d => {
+    const p = d.id ? DB.players[d.id] : null;
+    const hist = p ? playerTeamHistory(DB, p.id) : [];
+    const nMatches = p ? Object.values(DB.matches).filter(m => matchParticipants(m).has(p.id)).length : 0;
+    return {
+        title: p ? '球員資料' : '新增球員',
+        html: `<div class="field-row"><div class="field"><span>姓名</span><input class="input-text" data-field="pfName" value="${esc(F('pfName', ''))}" autocomplete="off" placeholder="姓名"></div>
+            <div class="field"><span>背號</span><input class="input-text" data-field="pfNumber" value="${esc(F('pfNumber', ''))}" inputmode="numeric" autocomplete="off" placeholder="例如 14"></div></div>
+            <div class="field"><span>位置（可多選，第一個是主位置）</span><div class="chips">${POSITIONS.map(c => { const i = d.positions.indexOf(c); return `<button type="button" class="chip${i !== -1 ? ' on' : ''}" data-action="pf-pos" data-v="${c}">${esc(posLabel(c))}${i === 0 && d.positions.length > 1 ? '<small>主</small>' : ''}</button>`; }).join('')}</div></div>
+            <div class="field-row"><div class="field"><span>入學年</span><input class="input-text" data-field="pfYear" value="${esc(F('pfYear', ''))}" inputmode="numeric" autocomplete="off" placeholder="例如 2024"></div>
+            <div class="field"><span>狀態</span><select class="input-text" data-field="pfStatus">${Object.keys(PLAYER_STATUS).map(k => `<option value="${k}"${F('pfStatus', 'active') === k ? ' selected' : ''}>${PLAYER_STATUS[k]}</option>`).join('')}</select></div></div>
+            <div class="field"><span>備註</span><input class="input-text" data-field="pfNote" value="${esc(F('pfNote', ''))}" autocomplete="off"></div>
+            ${p ? `<div class="sub-label">所屬隊伍歷史</div>${hist.length ? hist.map(h => `<div>${esc(h.season ? h.season.name : '')} ${esc(h.team.name)}</div>`).join('') : '<div class="note">還沒有加入任何隊伍</div>'}
+            <div class="note">${nMatches ? `有 ${nMatches} 場比賽紀錄，數據會跟著這位球員。不能刪除，不用時請把狀態改成「封存」，封存後不會出現在選單。` : '球員不會被刪除；不用時把狀態改成「封存」，封存後不會出現在選單。'}</div>` : ''}
+            <div class="form-msg">${esc(d.msg || '')}</div>
+            <button class="btn-solid brand block" data-action="pf-save">${p ? '儲存' : '新增'}</button>`
+    };
+};
+ACT['pf-pos'] = el => {
+    const l = ui.sheet.positions, i = l.indexOf(el.dataset.v);
+    if (i === -1) l.push(el.dataset.v); else l.splice(i, 1);
+    renderSheet();
+};
+ACT['pf-save'] = () => {
+    const d = ui.sheet, name = String(F('pfName', '')).trim();
+    if (!name) { d.msg = '請輸入姓名'; renderSheet(); return; }
+    const number = String(F('pfNumber', '')).trim();
+    const dup = Object.values(DB.players).find(p => p.id !== d.id && p.status !== 'archived' && p.name === name && String(p.number) === number);
+    if (dup && !d.dupOk) { d.msg = `已經有同名同背號的球員了（${dup.name} ${dup.number}）。確定是不同人的話，再按一次${d.id ? '儲存' : '新增'}。`; d.dupOk = true; renderSheet(); return; }
+    const f = { name, number, positions: d.positions.slice(), entryYear: F('pfYear', ''), note: F('pfNote', ''), status: F('pfStatus', 'active') };
+    commit(db => {
+        if (d.id) updatePlayerIn(db, d.id, f);
+        else { const p = addPlayerTo(db, f); if (f.status !== 'active') updatePlayerIn(db, p.id, { status: f.status }); }
+    });
+    closeSheet();
+    gtoast(d.id ? '已儲存' : `已新增 ${name}`);
+};
+
+/* ----- 快速匯入名單 ----- */
+ACT['open-roster-import'] = el => {
+    const cur = currentSeason();
+    ui.fields.riText = '';
+    ui.fields.riTeam = el.dataset.team || '';
+    openSheet('rosterImport', { step: 'edit', seasonId: cur ? cur.id : null });
+};
+SHEETS.rosterImport = d => {
+    if (d.step === 'edit') {
+        const seasons = seasonsSorted(DB);
+        const teamOpts = seasons.map(s => teamsOfSeason(DB, s.id)).reduce((a, b) => a.concat(b), []);
+        return {
+            title: '快速匯入名單',
+            html: `<div class="note">每行一位：「背號 姓名 位置」，位置可以不寫，多個位置用 / 隔開。例如：<br>14 姚承宏 OH<br>1 邱太穎 舉球<br>5 李書漢 攔中/大砲</div>
+                <textarea class="input-text" data-field="riText" rows="8" placeholder="14 姚承宏 OH&#10;1 邱太穎 舉球" autocomplete="off">${esc(F('riText', ''))}</textarea>
+                <div class="field"><span>同時加入隊伍</span><select class="input-text" data-field="riTeam"><option value="">不加入隊伍</option>${teamOpts.map(t => `<option value="${esc(t.id)}"${F('riTeam', '') === t.id ? ' selected' : ''}>${esc(teamLabel(DB, t.id))}</option>`).join('')}</select></div>
+                <div class="form-msg">${esc(d.msg || '')}</div>
+                <button class="btn-solid brand block" data-action="ri-preview">預覽</button>`
+        };
+    }
+    const nOk = d.rows.filter(r => r.ok).length;
+    const created = d.plan.filter(it => !(it.dupId && (d.choices[it.row.line] || 'merge') === 'merge')).length;
+    const teamName = F('riTeam', '') ? teamLabel(DB, F('riTeam', '')) : '';
+    return {
+        title: '確認匯入', sub: `${nOk} 位`,
+        html: `<div class="list">${d.rows.map(r => {
+            if (!r.ok) return `<div class="list-row"><span class="lr-main"><span class="lr-title" style="color:var(--loss-text)">第 ${r.line} 行看不懂：${esc(r.error)}</span><span class="lr-sub">${esc(r.raw)}</span></span></div>`;
+            const it = d.plan.find(x => x.row.line === r.line);
+            const dup = it && it.dupId;
+            const ch = d.choices[r.line] || 'merge';
+            return `<div class="list-row"><span class="lr-num">${esc(r.number || '–')}</span><span class="lr-main"><span class="lr-title">${esc(r.name)}</span><span class="lr-sub">${esc(r.positions.map(posLabel).join('/') || '未填位置')}${dup ? '・與現有球員同名同背號' : ''}</span></span>
+                ${dup ? `<span style="width:130px">${segHtml([{ value: 'merge', label: '合併' }, { value: 'new', label: '新建' }].map(o => ({ value: o.value, label: o.label })), ch, 'ri-choice', 'v').replace(/data-v=/g, `data-line="${r.line}" data-v=`)}</span>` : '<span class="tagx">新增</span>'}</div>`;
+        }).join('')}</div>
+            <div class="note">${created} 位會新建${nOk - created ? `、${nOk - created} 位會合併到現有球員` : ''}${teamName ? `；全部加入 ${esc(teamName)}` : ''}。</div>
+            <div class="confirm-row"><button class="btn-solid ghost" data-action="ri-back">回去修改</button><button class="btn-solid brand" data-action="ri-apply" ${nOk ? '' : 'disabled'}>建立</button></div>`
+    };
+};
+ACT['ri-preview'] = () => {
+    const d = ui.sheet, rows = parseRosterText(F('riText', ''));
+    if (!rows.length) { d.msg = '請先貼上名單'; renderSheet(); return; }
+    d.rows = rows; d.plan = planRosterImport(DB, rows); d.choices = {}; d.step = 'preview'; d.msg = '';
+    renderSheet();
+};
+ACT['ri-back'] = () => { ui.sheet.step = 'edit'; renderSheet(); };
+ACT['ri-choice'] = el => { ui.sheet.choices[el.dataset.line] = el.dataset.v; renderSheet(); };
+ACT['ri-apply'] = () => {
+    const d = ui.sheet, teamId = F('riTeam', '');
+    let res = null;
+    commit(db => {
+        res = applyRosterImport(db, d.plan, d.choices);
+        if (teamId && db.teams[teamId]) res.ids.forEach(id => moveMemberIn(db, id, teamId));
+    });
+    closeSheet();
+    gtoast(`已建立 ${res.created} 位${res.merged ? `、合併 ${res.merged} 位` : ''}`);
+};
 
 /* ===== BOOT：載入資料庫 → migrate → 繪製 ===== */
 (async function boot() {
