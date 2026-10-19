@@ -99,7 +99,7 @@
     .view.active { display: flex; flex-direction: column; }
 
     /* ===== 分頁畫面（首頁／隊伍／紀錄／數據） ===== */
-    #tabsView .page { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .page { flex: 1 1 auto; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
     .page-inner { display: flex; flex-direction: column; gap: 14px; padding-block: 16px 24px; }
     .page-title { background: var(--band); color: var(--on-band); border-radius: 12px; padding: 14px 16px; }
     .page-title h1 { margin: 0; font-size: 19px; letter-spacing: 1px; }
@@ -350,6 +350,43 @@
     .tl-paper tr.tl-ts td { color: var(--paper-pending-fg); }
     .tl-paper .pending { background: var(--paper-pending); }
 
+
+    /* ===== 本場報告（P4） ===== */
+    .pv-title { flex: 1; min-width: 0; font-weight: 800; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rp-result { font-family: var(--font-score); font-weight: 700; font-size: 44px; line-height: 1; font-variant-numeric: tabular-nums; }
+    .rp-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .rp-sets { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tagx.win { background: var(--score); border-color: var(--score); color: var(--on-btn); }
+    .tagx.lose { background: var(--loss); border-color: var(--loss); color: var(--on-btn); }
+    .tl-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 2px; }
+    .rp-card h2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .qbtn { border: 1px solid var(--chip-line); background: var(--chip); color: var(--ink); border-radius: 50%; width: 28px; height: 28px; font-weight: 800; font-size: 14px; padding: 0; flex: 0 0 auto; }
+    .stat-group { display: flex; flex-direction: column; gap: 6px; }
+    .stat-row { display: grid; grid-template-columns: 5.5em minmax(0, 1fr) 2.2em; gap: 8px; align-items: center; font-size: 14px; }
+    .stat-row.zero { color: var(--muted); }
+    .stat-bar { height: 12px; border-radius: 3px; background: var(--line); overflow: hidden; }
+    .stat-bar i { display: block; height: 100%; }
+    .stat-row b { text-align: right; font-variant-numeric: tabular-nums; }
+    .metric { display: grid; grid-template-columns: 4.5em minmax(0, 1fr); gap: 4px 10px; padding-block: 8px; border-top: 1px solid var(--line); font-size: 14px; }
+    .metric:first-of-type { border-top: none; }
+    .metric > b { font-weight: 800; }
+    .metric .mv { display: flex; flex-wrap: wrap; gap: 2px 14px; font-variant-numeric: tabular-nums; }
+    .metric .mv span em { font-style: normal; color: var(--muted); margin-right: 4px; }
+    .rtable-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+    .rtable { border-collapse: separate; border-spacing: 0; min-width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+    .rtable th, .rtable td { padding: 7px 8px; text-align: center; white-space: nowrap; border-bottom: 1px solid var(--line); }
+    .rtable thead th { font-size: 11px; font-weight: 700; color: var(--muted); background: var(--bg); }
+    .rtable th:first-child, .rtable td:first-child { position: sticky; left: 0; z-index: 1; text-align: left; background: var(--surface); border-right: 1px solid var(--line); font-weight: 700; }
+    .rtable thead th:first-child { background: var(--bg); z-index: 2; }
+    .rtable tr.zero td { color: var(--muted); }
+    .rtable tr.team td { font-weight: 800; background: var(--bg); }
+    .rtable tr.team td:first-child { background: var(--bg); }
+    .rtable td.g { border-left: 1px solid var(--line); }
+    .def-row { padding-block: 8px; border-top: 1px solid var(--line); }
+    .def-row:first-child { border-top: none; }
+    .def-row b { display: block; font-size: 14px; }
+    .def-row span { display: block; font-size: 13px; line-height: 1.5; }
+    .def-row small { display: block; font-size: 12px; color: var(--muted); }
     @media print {
         @page { size: A4 landscape; margin: 8mm; }
         html, body { height: auto; overflow: visible; background: #fff; }
@@ -421,6 +458,17 @@
         </div>
     </div>
     <div class="pv-scroll gutter" id="pvScroll"></div>
+</div>
+
+<!-- ============ 本場報告 ============ -->
+<div id="reportView" class="view">
+    <div class="pv-bar">
+        <div class="pv-bar-inner gutter">
+            <button class="pv-btn" data-action="report-back">← 返回</button>
+            <span class="pv-title" id="rpTitle"></span>
+        </div>
+    </div>
+    <div class="page" id="reportPage"></div>
 </div>
 
 <!-- ============ 圖片（長按儲存） ============ -->
@@ -1340,6 +1388,84 @@ function restoreConflict(db, cid) {
     return true;
 }
 
+/* ===== 報告與 CSV（P4） ===== */
+function fmtPct(x) { return x == null ? '—' : (Math.round(x * 1000) / 10).toFixed(1) + '%'; }
+function csvCell(v) {
+    const t = v == null ? '' : String(v);
+    return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+}
+// 個人表／CSV 的欄位；t:true 的欄位也放在畫面上的個人表（其餘只在 CSV）
+const STAT_COLUMNS = [
+    { h: '得分', t: true, get: s => s.pts },
+    { h: '失分', t: true, get: s => s.loss },
+    { h: '淨值', t: true, signed: true, get: s => s.net },
+    { h: '攻擊得分', t: true, get: s => s.attack.pt },
+    { h: '攻擊失誤', t: true, get: s => s.attack.err },
+    { h: '攻擊被守起', get: s => s.attack.dug },
+    { h: '攻擊總數', t: true, get: s => s.attack.total },
+    { h: '攻擊成功率', t: true, pct: true, get: s => s.attack.rate },
+    { h: '攻擊效率', pct: true, get: s => s.attack.eff },
+    { h: '發球得分', t: true, get: s => s.serve.pt },
+    { h: '發球失誤', t: true, get: s => s.serve.err },
+    { h: '發球總數', t: true, get: s => s.serve.total },
+    { h: '發球成功率', t: true, pct: true, get: s => s.serve.rate },
+    { h: 'ACE率', pct: true, get: s => s.serve.ace },
+    { h: '攔網得分', t: true, get: s => s.block.pt },
+    { h: '攔網失誤', t: true, get: s => s.block.err },
+    { h: '接發到位', get: s => s.receive.good },
+    { h: '接發不到位', get: s => s.receive.poor },
+    { h: '接發失誤', get: s => s.receive.err },
+    { h: '接發到位率', t: true, pct: true, get: s => s.receive.rate },
+    { h: '防守起球', get: s => s.dig.ok },
+    { h: '防守沒起', get: s => s.dig.no },
+    { h: '防守起球率', t: true, pct: true, get: s => s.dig.rate }
+];
+function fmtStatCell(col, s) {
+    const v = col.get(s);
+    if (col.pct) return fmtPct(v);
+    if (v == null) return '—';
+    return col.signed && v > 0 ? '+' + v : String(v);
+}
+// 報告裡列出的球員：登錄名單（照名單順序），加上名單外但有紀錄的人
+function reportPlayerIds(match, ms) {
+    const ids = match.roster.map(r => r.playerId);
+    ms.order.forEach(id => { if (ids.indexOf(id) === -1) ids.push(id); });
+    return ids;
+}
+function playerNumberIn(match, db, pid) {
+    const r = match.roster.find(x => x.playerId === pid);
+    if (r) return r.number;
+    return db && db.players[pid] ? db.players[pid].number : '';
+}
+// 數據表 CSV（UTF-8 加 BOM，Excel 打開中文不亂碼）；opts.setIdx = 只算某一局
+function buildMatchCsv(match, db, opts) {
+    const ms = computeMatchStats(match, db, opts);
+    const rows = [['背號', '球員'].concat(STAT_COLUMNS.map(c => c.h))];
+    const cell = (c, s) => { const v = c.get(s); return c.pct ? (v == null ? '' : fmtPct(v)) : (v == null ? '' : v); };
+    reportPlayerIds(match, ms).forEach(pid => {
+        const s = ms.players[pid] || finalizeStat(blankStat(pid));
+        if (ms.tracked && s.serve.total === null) s.serve.total = 0;
+        rows.push([playerNumberIn(match, db, pid), nameOfIn(match, db, pid)].concat(STAT_COLUMNS.map(c => cell(c, s))));
+    });
+    rows.push(['', '全隊'].concat(STAT_COLUMNS.map(c => cell(c, ms.team))));
+    return '﻿' + rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+}
+// 比賽歷史列表：新的在前；filter.teamName = 只看某一隊名（A隊／B隊，跨賽季）
+function matchHistory(db, filter) {
+    const f = filter || {};
+    return Object.values(db.matches).filter(m => {
+        if (f.teamName) { const t = db.teams[m.teamId]; if (!t || t.name !== f.teamName) return false; }
+        return true;
+    }).sort((a, b) => String(b.date).localeCompare(String(a.date)) || b.createdAt - a.createdAt).map(m => {
+        const sum = matchSummary(m);
+        return {
+            id: m.id, date: m.date, opponent: m.opponent, event: m.event, teamId: m.teamId, status: m.status,
+            us: sum.us, them: sum.them, done: sum.done, result: sum.done ? (sum.winner === 'us' ? '勝' : '敗') : null,
+            sets: sum.sets.filter(x => x.started).map(x => `${x.score.us}:${x.score.them}`)
+        };
+    });
+}
+
 /* ===== SELFTEST ===== */
 function runSelfTests() {
     const results = [];
@@ -1799,6 +1925,103 @@ function runSelfTests() {
         eq([r2.created, r2.merged], [1, 0]); eq(Object.keys(db.players).length, 3);
     });
 
+    // ---- P4：報告、CSV、歷史 ----
+    T('模擬整場對帳：報告數字與手算（逐筆計數）一致', () => {
+        let seed = 20261019;
+        const rnd = () => { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+        const ids = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'];
+        const m = newMatch({ formatKey: 'bo3', date: '2026-10-19', opponent: '對帳隊' });
+        m.roster = ids.map(id => ({ playerId: id, name: id, number: '', positions: [] }));
+        const SC = ['s_serve', 's_attack', 's_tip', 's_block'], LS = ['l_serve', 'l_receive', 'l_attack', 'l_dig', 'l_second', 'l_tip', 'l_net', 'l_block', 'l_setter'];
+        // 手算用的計數器：只看「點了什麼」，不經過任何推導函式
+        const H = { pts: {}, loss: {}, atkPt: {}, atkErr: {}, dug: {}, srvPt: {}, srvErr: {}, blkPt: {}, blkErr: {}, src: {}, lossSrc: {}, us: 0, them: 0, pend: 0 };
+        const add = (o, k) => { o[k] = (o[k] || 0) + 1; };
+        const setScores = [];
+        [25, 25, 15].forEach((target, si) => {
+            let us = 0, them = 0;
+            while (!((us >= target && us - them >= 2) || (them >= target && them - us >= 2))) {
+                const p = ids[Math.floor(rnd() * 8)];
+                if (rnd() < 0.35) { m.sets[si].log.push(buildEvent('c_attack', ids[Math.floor(rnd() * 8)])); add(H.dug, m.sets[si].log[m.sets[si].log.length - 1].p); }
+                const win = rnd() < 0.55, r = rnd();
+                let id, pid = p;
+                if (win) {
+                    us++; H.us++;
+                    if (r < 0.2) { id = 't_opp_err'; pid = null; add(H.src, '對方失誤'); }
+                    else { id = SC[Math.floor(rnd() * 4)]; const a = ACTION_BY_ID[id]; add(H.pts, p); add(H.src, a.col); if (a.skill === 'attack') add(H.atkPt, p); if (a.skill === 'serve') add(H.srvPt, p); if (a.skill === 'block') add(H.blkPt, p); }
+                } else {
+                    them++; H.them++;
+                    if (r < 0.2) { id = 't_opp_pt'; pid = null; add(H.lossSrc, '對手好球'); }
+                    else if (r < 0.25) { id = 't_pending'; pid = null; add(H.lossSrc, '待確認'); H.pend++; }
+                    else { id = LS[Math.floor(rnd() * 9)]; const a = ACTION_BY_ID[id]; add(H.loss, p); add(H.lossSrc, a.col); if (a.skill === 'attack') add(H.atkErr, p); if (a.skill === 'serve') add(H.srvErr, p); if (a.skill === 'block') add(H.blkErr, p); }
+                }
+                m.sets[si].log.push(buildEvent(id, pid));
+            }
+            setScores.push([us, them]);
+        });
+        const ms = computeMatchStats(m, null), sum = matchSummary(m);
+        eq(sum.sets.map(x => [x.score.us, x.score.them]), setScores, '每局比分');
+        eq(ms.team.pts, H.us, '全隊得分'); eq(ms.team.loss, H.them, '全隊失分');
+        ids.forEach(id => {
+            const s = ms.players[id] || blankStat(id);
+            eq([s.pts, s.loss, s.net], [H.pts[id] || 0, H.loss[id] || 0, (H.pts[id] || 0) - (H.loss[id] || 0)], `${id} 得失分淨值`);
+            const at = (H.atkPt[id] || 0) + (H.atkErr[id] || 0) + (H.dug[id] || 0);
+            eq([s.attack.pt, s.attack.err, s.attack.dug, s.attack.total], [H.atkPt[id] || 0, H.atkErr[id] || 0, H.dug[id] || 0, at], `${id} 攻擊`);
+            eq(s.attack.rate, at ? (H.atkPt[id] || 0) / at : null, `${id} 成功率`);
+            eq([s.serve.pt, s.serve.err, s.block.pt, s.block.err], [H.srvPt[id] || 0, H.srvErr[id] || 0, H.blkPt[id] || 0, H.blkErr[id] || 0], `${id} 發球攔網`);
+        });
+        Object.keys(H.src).forEach(k => eq(ms.team.points[k], H.src[k], `得分來源 ${k}`));
+        Object.keys(H.lossSrc).forEach(k => eq(ms.team.losses[k], H.lossSrc[k], `失分來源 ${k}`));
+        eq(ms.pendingCount, H.pend, '待確認球數');
+        const dugAll = Object.values(H.dug).reduce((a, b) => a + b, 0);
+        eq(ms.team.attack.dug, dugAll, '被守起總數');
+        eq(ms.team.serve.total, null, '沒有先發陣容 → 發球總數「—」');
+        // 只看某一局：各局加總 = 全場
+        let sumPts = 0; [0, 1, 2].forEach(i => { sumPts += computeMatchStats(m, null, { setIdx: i }).team.pts; });
+        eq(sumPts, H.us, '各局得分加總');
+        // CSV 與畫面用同一份統計
+        const csv = buildMatchCsv(m, null);
+        const lines = csv.slice(1).trim().split('\r\n');
+        eq(lines.length, 1 + 8 + 1, '表頭＋8 位球員＋全隊');
+        eq(lines[lines.length - 1].split(',')[2], String(ms.team.pts), 'CSV 全隊得分');
+    });
+    T('CSV：UTF-8 BOM、欄位逸出、全隊列、單局', () => {
+        const m = fixtureMatch();
+        m.roster[0].name = '姚,承"宏'; m.roster[0].number = '14';
+        const csv = buildMatchCsv(m, null);
+        eq(csv.charCodeAt(0), 0xFEFF, 'BOM');
+        const lines = csv.slice(1).trim().split('\r\n');
+        eq(lines[0].split(',').length, 2 + STAT_COLUMNS.length, '欄數');
+        ok(lines[1].indexOf('14,"姚,承""宏",') === 0, '含逗號與雙引號的姓名要加引號並逸出：' + lines[1].slice(0, 20));
+        eq(lines.length, 1 + 6 + 1);
+        ok(lines[lines.length - 1].indexOf(',全隊,') !== -1);
+        const set2 = buildMatchCsv(m, null, { setIdx: 1 }).slice(1).trim().split('\r\n');
+        eq(set2[set2.length - 1].split(',')[2], '0', '第 2 局沒有紀錄');
+        eq(csvCell(null), ''); eq(csvCell('a\nb'), '"a\nb"');
+    });
+    T('數字格式：百分比一位小數、沒有資料顯示「—」', () => {
+        eq(fmtPct(0.5), '50.0%'); eq(fmtPct(1), '100.0%'); eq(fmtPct(2 / 3), '66.7%'); eq(fmtPct(null), '—'); eq(fmtPct(0), '0.0%');
+        const s = computeMatchStats(fixtureMatch(), null).players.X;
+        const col = h => STAT_COLUMNS.find(c => c.h === h);
+        eq(fmtStatCell(col('攻擊成功率'), s), '—', 'X 沒攻擊 → 「—」'); eq(fmtStatCell(col('發球總數'), s), '3'); eq(fmtStatCell(col('淨值'), s), '0');
+        eq(fmtStatCell(col('淨值'), { net: 3 }), '+3');
+    });
+    T('比賽歷史：新的在前、勝負、各局比分、依隊伍篩選', () => {
+        const { db, A, B, m } = seedDb();
+        const m2 = fixtureMatch(); m2.date = '2026-11-02'; m2.teamId = B.id; m2.opponent = '北辰高中';
+        for (let i = 0; i < 25; i++) m2.sets[1].log.push(E('team', 'opp_err'));
+        for (let i = 0; i < 25; i++) m2.sets[2].log.push(E('team', 'opp_err'));
+        m2.sets[0].log = [];
+        for (let i = 0; i < 25; i++) m2.sets[0].log.push(E('team', 'opp_pt'));
+        db.matches[m2.id] = m2;
+        const all = matchHistory(db, null);
+        eq(all.map(r => r.opponent), ['北辰高中', '測試隊'], '日期新的在前');
+        eq([all[0].us, all[0].them, all[0].done, all[0].result], [2, 1, true, '勝']);
+        eq(all[0].sets, ['0:25', '25:0', '25:0']);
+        eq(all[1].result, null, '還沒打完不算勝負');
+        eq(matchHistory(db, { teamName: 'A隊' }).map(r => r.opponent), ['測試隊']);
+        eq(matchHistory(db, { teamName: 'B隊' }).map(r => r.opponent), ['北辰高中']);
+    });
+
     const failed = results.filter(r => !r.ok);
     return { total: results.length, passed: results.length - failed.length, failed: failed.length, results };
 }
@@ -2089,8 +2312,8 @@ ACT['export-match'] = el => {
     exportJson(exportMatchObject(DB, m.id), `化工男排_vs${m.opponent}_${m.date}.json`.replace(/[\\/:*?"<>|\s]+/g, ''), false);
 };
 SHEETS.jsonText = d => ({
-    title: '複製紀錄檔文字',
-    html: `<p class="note">這個畫面不能直接存檔。按「複製」，貼到備忘錄或傳給自己；之後用「貼上文字匯入」就能還原。</p>
+    title: d.title || '複製紀錄檔文字',
+    html: `<p class="note">${esc(d.note || '這個畫面不能直接存檔。按「複製」，貼到備忘錄或傳給自己；之後用「貼上文字匯入」就能還原。')}</p>
         <textarea class="input-text" id="jsonOut" readonly rows="8">${esc(d.text)}</textarea>
         <button class="btn-solid brand block" data-action="copy-json">複製</button>`
 });
@@ -2203,7 +2426,7 @@ function renderTabs() {
     page.scrollTop = keep;
     document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === ui.tab));
 }
-let RENDERERS = { live: () => {}, preview: () => {} };
+let RENDERERS = { live: () => {}, preview: () => {}, report: () => {} };
 function render() {
     const v = topView();
     document.querySelectorAll('.view').forEach(el => el.classList.toggle('active', el.id === v + 'View'));
@@ -2954,8 +3177,9 @@ ACT['finish-match'] = () => {
     const m = liveMatch();
     askConfirm('結束後這場比賽會存檔，可以隨時回頭看紀錄表。要結束嗎？', '結束比賽', () => {
         commit(db => { const mm = db.matches[m.id]; mm.status = 'done'; if (mm.timer.since) mm.timer = { ms: timerMs(mm), since: null }; touch(mm); });
-        ui.viewStack = ['tabs']; ui.tab = 'home'; ui.hist = 0;
+        ui.viewStack = ['tabs']; ui.tab = 'stats'; ui.hist = 0;
         render();
+        openReport(m.id);
         gtoast('比賽已存檔，記得匯出備份');
     }, false);
 };
@@ -3165,24 +3389,114 @@ async function exportSheet(kind) {
     } finally { btns.forEach(b => { b.disabled = false; }); }
 }
 
-/* ===== VIEW_STATS（暫時版）：比賽列表，讓已結束的比賽也能回頭看紀錄表、匯出；完整的歷史與報告在 P4 ===== */
+/* ===== VIEW_STATS：比賽歷史 ===== */
+function teamNamesInHistory() {
+    const names = [];
+    Object.values(DB.matches).forEach(m => { const t = DB.teams[m.teamId]; if (t && names.indexOf(t.name) === -1) names.push(t.name); });
+    return names.sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+}
 function viewStats() {
-    const list = Object.values(DB.matches).sort((a, b) => String(b.date).localeCompare(String(a.date)) || b.createdAt - a.createdAt);
-    return `<div class="page-inner col gutter"><div class="page-title"><h1>數據</h1><p>比賽歷史與數據報告會在之後的版本加入；現在先列出全部比賽</p></div>
-        ${list.length ? `<div class="list">${list.map(m => `<button class="list-row" data-action="match-open" data-id="${esc(m.id)}"><span class="lr-main"><span class="lr-title">vs ${esc(m.opponent)}</span><span class="lr-sub">${esc(m.date)}${m.event ? '・' + esc(m.event) : ''}・${esc(teamLabel(DB, m.teamId))}</span></span>
-            <span class="lr-num">${esc(matchScoreText(m))}</span>${m.status === 'live' ? '<span class="tagx">進行中</span>' : ''}</button>`).join('')}</div>` : '<div class="empty">還沒有比賽。</div>'}</div>`;
+    const names = teamNamesInHistory(), cur = ui.stats.team;
+    const list = matchHistory(DB, cur === 'all' ? null : { teamName: cur });
+    const filter = names.length > 1 ? `<div class="chips">${chipsHtml([{ value: 'all', label: '全部' }].concat(names.map(n => ({ value: n, label: n }))), [cur], 'stats-team')}</div>` : '';
+    return `<div class="page-inner col gutter"><div class="page-title"><h1>數據</h1><p>比賽歷史；點進去看本場報告</p></div>${filter}
+        ${list.length ? `<div class="list">${list.map(r => `<button class="list-row" data-action="open-report" data-id="${esc(r.id)}"><span class="lr-main"><span class="lr-title">vs ${esc(r.opponent)}</span>
+            <span class="lr-sub">${esc(r.date)}${r.event ? '・' + esc(r.event) : ''}・${esc(teamLabel(DB, r.teamId))}</span><span class="lr-sub">${r.sets.length ? esc(r.sets.join('　')) : '還沒有紀錄'}</span></span>
+            ${r.status === 'live' ? '<span class="tagx">進行中</span>' : (r.result ? `<span class="tagx ${r.result === '勝' ? 'win' : 'lose'}">${r.result}</span>` : '')}<span class="lr-num">${r.us}:${r.them}</span></button>`).join('')}</div>` : '<div class="empty">還沒有比賽。<br>到「紀錄」開一場新比賽。</div>'}</div>`;
 }
 TAB_VIEWS.stats = viewStats;
-ACT['match-open'] = el => openSheet('matchActions', { id: el.dataset.id });
-SHEETS.matchActions = d => {
-    const m = DB.matches[d.id];
-    if (!m) return { title: '比賽', html: '' };
-    return {
-        title: `vs ${m.opponent}`, sub: m.date,
-        html: (m.status === 'live' ? menuItem('▶', '繼續紀錄', '', 'resume-match', `data-id="${esc(m.id)}"`) : menuItem('↩', '重新開啟紀錄', '補記或修正', 'reopen-match', `data-id="${esc(m.id)}"`))
-            + menuItem('📋', '紀錄表（PNG／PDF）', '', 'open-preview', `data-id="${esc(m.id)}"`)
-            + menuItem('📤', '匯出這一場的紀錄檔', '.json', 'export-match', `data-id="${esc(m.id)}"`)
-    };
+ui.stats = { team: 'all' };
+ACT['stats-team'] = el => { ui.stats.team = el.dataset.v; render(); };
+
+/* ===== VIEW_REPORT：本場報告 ===== */
+function openReport(id) {
+    closeSheet();
+    ui.report = { matchId: id, setIdx: null };
+    pushView('report');
+}
+ACT['open-report'] = el => openReport(el.dataset.id);
+ACT['report-back'] = () => backView();
+ACT['rp-set'] = el => { ui.report.setIdx = el.dataset.v === '' ? null : Number(el.dataset.v); render(); };
+const SRC_COLORS = { score: 'var(--score)', loss: 'var(--loss)', pend: 'var(--warn)' };
+function barGroup(title, data, color, hi) {
+    const keys = Object.keys(data), total = keys.reduce((a, k) => a + data[k], 0), max = Math.max(1, ...keys.map(k => data[k]));
+    return `<div class="stat-group"><div class="sub-label">${title} ${total}</div>${keys.map(k => `<div class="stat-row${data[k] ? '' : ' zero'}"><span>${esc(actionLabel(k))}</span><span class="stat-bar"><i style="width:${data[k] / max * 100}%;background:${k === hi ? SRC_COLORS.pend : color}"></i></span><b>${data[k]}</b></div>`).join('')}</div>`;
+}
+function metricRow(label, parts) {
+    return `<div class="metric"><b>${label}</b><div class="mv">${parts.map(p => `<span><em>${p[0]}</em>${p[1]}</span>`).join('')}</div></div>`;
+}
+function reportHtml(m) {
+    const sum = matchSummary(m), idx = ui.report.setIdx;
+    const ms = computeMatchStats(m, DB, idx === null ? null : { setIdx: idx });
+    const t = ms.team, scope = idx === null ? '全場' : `第 ${idx + 1} 局`;
+    const resultTag = m.status === 'live' ? '<span class="tagx">進行中</span>' : (sum.done ? `<span class="tagx ${sum.winner === 'us' ? 'win' : 'lose'}">${sum.winner === 'us' ? '勝' : '敗'}</span>` : '<span class="tagx">未分勝負</span>');
+    const started = sum.sets.filter(x => x.started);
+    let h = `<div class="page-inner col gutter">
+        <div class="card"><div class="rp-top"><div><div class="card-label">vs ${esc(m.opponent)}</div><div class="note">${esc(m.date)}${m.event ? '・' + esc(m.event) : ''}・${esc(teamLabel(DB, m.teamId))}${m.recorder ? '・紀錄：' + esc(m.recorder) : ''}</div></div>${resultTag}</div>
+            <div class="rp-top"><span class="rp-result">${sum.us} : ${sum.them}</span><span class="note">${esc(FORMATS[m.format.bestOf === 5 ? 'bo5' : 'bo3'].label)}</span></div>
+            <div class="rp-sets">${started.map(x => `<span class="tagx">第 ${x.no} 局 ${x.score.us}:${x.score.them}</span>`).join('') || '<span class="note">還沒有紀錄</span>'}</div></div>
+        <div class="chips">${chipsHtml([{ value: '', label: '全場' }].concat(started.map(x => ({ value: String(x.no - 1), label: `第 ${x.no} 局` }))), [idx === null ? '' : String(idx)], 'rp-set')}</div>`;
+    if (!ms.rallies) return h + '<div class="empty">這個範圍還沒有紀錄。</div></div>';
+    // 比分軌跡
+    h += `<div class="card rp-card"><h2>比分軌跡</h2>${sum.sets.filter(x => x.started && (idx === null || x.no - 1 === idx)).map(x => `<div><div class="sub-label">第 ${x.no} 局　${x.score.us}:${x.score.them}</div><div class="tl-scroll">${timelineTable(setTimeline(x.state), 0, 'tl-live')}</div></div>`).join('')}</div>`;
+    // 得失分來源
+    const lossData = Object.assign({}, t.losses);
+    h += `<div class="card rp-card"><h2>${scope}：得分與失分來源</h2>${barGroup('得分', t.points, SRC_COLORS.score)}${barGroup('失分', lossData, SRC_COLORS.loss, '待確認')}
+        ${ms.pendingCount ? `<div class="banner-warn">有 ${ms.pendingCount} 球是「待確認」，還沒補上原因，不會算進任何球員。</div>` : ''}</div>`;
+    // 團隊指標
+    const a = t.attack, sv = t.serve, rcv = t.receive, dg = t.dig;
+    const runTxt = r => r.n ? `${r.n} 分（第 ${r.set} 局）` : '—';
+    h += `<div class="card rp-card"><h2>${scope}：團隊指標 <button class="qbtn" data-action="stat-defs" aria-label="指標怎麼算">?</button></h2>
+        ${metricRow('攻擊', [['得分', a.pt], ['失誤', a.err], ['被守起', a.dug], ['總數', a.total], ['成功率', fmtPct(a.rate)], ['效率', fmtPct(a.eff)]])}
+        ${a.noteHigh ? '<div class="banner-warn">此場未記錄被守起，成功率會偏高。</div>' : ''}
+        ${metricRow('發球', [['得分', sv.pt], ['失誤', sv.err], ['總數', sv.total === null ? '—' : sv.total], ['成功率', fmtPct(sv.rate)], ['ACE率', fmtPct(sv.ace)]])}
+        ${metricRow('攔網', [['得分', t.block.pt], ['失誤', t.block.err]])}
+        ${metricRow('接發', rcv.total ? [['到位', rcv.good], ['不到位', rcv.poor], ['失誤', rcv.err], ['到位率', fmtPct(rcv.rate)]] : [['', '—（還沒有逐球覆盤）']])}
+        ${metricRow('防守', dg.total ? [['起球', dg.ok], ['沒起', dg.no], ['起球率', fmtPct(dg.rate)]] : [['', '—（還沒有逐球覆盤）']])}
+        ${metricRow('連續', [['最多連得', runTxt(ms.runs.us)], ['最多連失', runTxt(ms.runs.them)]])}
+        ${DB.settings.showTallyRow || TALLY_KEYS.some(k => ms.tally[k]) ? metricRow('配球', TALLY_KEYS.map(k => [k, ms.tally[k]])) : ''}
+        ${ms.tracked ? '' : '<div class="note">這個範圍沒有先發陣容，發球總數與發球成功率顯示「—」。</div>'}</div>`;
+    // 個人表
+    const cols = STAT_COLUMNS.filter(c => c.t);
+    const ids = reportPlayerIds(m, ms);
+    const rowHtml = (name, s, cls) => `<tr class="${cls}"><td>${name}</td>${cols.map(c => `<td${c.h === '攻擊得分' || c.h === '發球得分' || c.h === '攔網得分' || c.h === '接發到位率' ? ' class="g"' : ''}>${esc(fmtStatCell(c, s))}</td>`).join('')}</tr>`;
+    h += `<div class="card rp-card"><h2>${scope}：個人表</h2><div class="rtable-wrap"><table class="rtable"><thead><tr><th>球員</th>${cols.map(c => `<th>${esc(c.h)}</th>`).join('')}</tr></thead><tbody>
+        ${ids.map(pid => { const s = ms.players[pid] || finalizeStat(blankStat(pid)); if (ms.tracked && s.serve.total === null) s.serve.total = 0; const zero = !s.pts && !s.loss && !s.attack.dug; return rowHtml(esc(nameOfIn(m, DB, pid)), s, zero ? 'zero' : ''); }).join('')}
+        ${rowHtml('全隊', t, 'team')}</tbody></table></div>
+        <div class="note">左右滑動看完整欄位。${a.noteHigh ? '此場未記錄被守起，攻擊成功率會偏高。' : ''}</div></div>`;
+    // 動作
+    h += `<div class="card rp-card"><h2>匯出與其他</h2>
+        <button class="btn-solid brand block" data-action="open-preview" data-id="${esc(m.id)}">正字紀錄表（PNG／PDF）</button>
+        <button class="btn-solid block" data-action="export-csv">匯出${scope}數據表（CSV）</button>
+        <button class="btn-solid ghost block" data-action="export-match" data-id="${esc(m.id)}">匯出這一場的紀錄檔（.json）</button>
+        ${m.status === 'live' ? `<button class="btn-solid ghost block" data-action="resume-match" data-id="${esc(m.id)}">繼續紀錄</button>` : `<button class="btn-solid ghost block" data-action="reopen-match" data-id="${esc(m.id)}">重新開啟紀錄（補記或修正）</button>`}</div></div>`;
+    return h;
+}
+function renderReport() {
+    const m = DB.matches[ui.report.matchId];
+    if (!m) { ui.viewStack = ['tabs']; render(); return; }
+    const page = $('#reportPage');
+    const keep = renderReport.last === m.id ? page.scrollTop : 0;
+    renderReport.last = m.id;
+    $('#rpTitle').textContent = `本場報告・vs ${m.opponent}`;
+    page.innerHTML = reportHtml(m);
+    page.scrollTop = keep;
+}
+RENDERERS.report = renderReport;
+ACT['stat-defs'] = () => openSheet('statDefs', {});
+SHEETS.statDefs = () => ({
+    title: '指標怎麼算', 
+    html: `<div>${STAT_DEFS.map(d => `<div class="def-row"><b>${esc(d.label)}</b><span>${esc(d.formula)}</span><small>需要：${esc(d.needs)}</small></div>`).join('')}</div>
+        <button class="btn-solid brand block" data-action="sheet-close">知道了</button>`
+});
+ACT['export-csv'] = async () => {
+    const m = DB.matches[ui.report.matchId], idx = ui.report.setIdx;
+    if (!m) return;
+    const text = buildMatchCsv(m, DB, idx === null ? null : { setIdx: idx });
+    const filename = `化工男排數據_vs${m.opponent}_${m.date}${idx === null ? '' : '_第' + (idx + 1) + '局'}.csv`.replace(/[\\/:*?"<>|\s]+/g, '');
+    const r = await saveFile(filename, new Blob([text], { type: 'text/csv;charset=utf-8' }));
+    if (r === false) { openSheet('jsonText', { filename, text, title: '複製數據表文字', note: '這個畫面不能直接存檔。按「複製」，貼到試算表或備忘錄。' }); return; }
+    if (r !== 'cancelled') gtoast(r === 'download' ? `已下載：${filename}` : '已匯出');
 };
 ACT['reopen-match'] = el => {
     commit(db => { const mm = db.matches[el.dataset.id]; mm.status = 'live'; touch(mm); });
