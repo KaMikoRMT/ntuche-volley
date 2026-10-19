@@ -28,6 +28,12 @@
         --loss-team: #6d1a27;
         --loss-text: #a03a40;
         --cont: #8a6d2b;
+        /* 配球位置的分類色（資料視覺化的類別色，依序驗證過色盲辨識；一定搭配文字標籤） */
+        --pos-oh: #2a78d6;
+        --pos-mb: #eb6834;
+        --pos-opp: #1baf7a;
+        --pos-s: #eda100;
+        --pos-none: #a89a90;
         --on-btn: #ffffff;
         --chip: #f6e9e4;
         --chip-line: #dbb7ae;
@@ -63,7 +69,7 @@
             --bg: #1d1816; --surface: #28211e; --ink: #f1e7df; --muted: #a8978b; --line: #3d332e;
             --band: #5e1824; --on-band: #fff3ec;
             --score: #5c7646; --score-team: #445c33; --score-text: #9bbb7c;
-            --loss: #a9474e; --loss-team: #74222f; --loss-text: #ec8c90; --cont: #a88a3c;
+            --loss: #a9474e; --loss-team: #74222f; --loss-text: #ec8c90; --cont: #a88a3c; --pos-oh: #3987e5; --pos-mb: #d95926; --pos-opp: #199e70; --pos-s: #c98500; --pos-none: #8a7d74;
             --chip: #332a27; --chip-line: #54453f; --chip-on: #c4485a;
             --warn: #c99a2a; --pending-bg: #6b5a14; --pending-fg: #ffe680;
             --tally: #3e332e; --scrim: rgba(0, 0, 0, 0.6); --shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
@@ -74,7 +80,7 @@
         --bg: #1d1816; --surface: #28211e; --ink: #f1e7df; --muted: #a8978b; --line: #3d332e;
         --band: #5e1824; --on-band: #fff3ec;
         --score: #5c7646; --score-team: #445c33; --score-text: #9bbb7c;
-        --loss: #a9474e; --loss-team: #74222f; --loss-text: #ec8c90; --cont: #a88a3c;
+        --loss: #a9474e; --loss-team: #74222f; --loss-text: #ec8c90; --cont: #a88a3c; --pos-oh: #3987e5; --pos-mb: #d95926; --pos-opp: #199e70; --pos-s: #c98500; --pos-none: #8a7d74;
         --chip: #332a27; --chip-line: #54453f; --chip-on: #c4485a;
         --warn: #c99a2a; --pending-bg: #6b5a14; --pending-fg: #ffe680;
         --tally: #3e332e; --scrim: rgba(0, 0, 0, 0.6); --shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
@@ -427,6 +433,37 @@
     .rtable th button { border: none; background: transparent; font: inherit; color: inherit; padding: 0; min-height: 28px; white-space: nowrap; }
     .rtable th button.on { color: var(--ink); text-decoration: underline; }
     .rtable td button { border: none; background: transparent; font: inherit; color: inherit; padding: 4px 0; text-align: left; min-height: 32px; }
+    /* 對比條：左成功、右失敗（兩端各一顆百分比標籤）；堆疊條：配球位置、接發品質 */
+    .viz { display: flex; flex-direction: column; gap: 6px; padding-block: 8px; border-top: 1px solid var(--line); }
+    .viz:first-of-type { border-top: none; }
+    .viz-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+    .viz-title { text-align: center; font-size: 14px; font-weight: 800; min-width: 0; }
+    .viz-pill { min-width: 3.6em; text-align: center; padding: 3px 10px; border-radius: 12px; font-weight: 800; font-size: 14px; font-variant-numeric: tabular-nums; color: var(--on-btn); }
+    .viz-pill.good { background: var(--score); }
+    .viz-pill.bad { background: var(--loss); }
+    .viz-pill.mid { background: var(--cont); }
+    .viz-pill.none { background: var(--chip-line); color: var(--ink); }
+    .viz-bar { display: flex; gap: 2px; height: 18px; border-radius: 9px; overflow: hidden; background: var(--line); }
+    .viz-bar > i { display: block; min-width: 0; font-style: normal; }
+    .viz-bar > i.good { background: var(--score); }
+    .viz-bar > i.mid { background: var(--cont); }
+    .viz-bar > i.bad { background: var(--loss); }
+    .viz-bar > i.err { background: var(--loss-team); }
+    .viz-bar.tall { height: 26px; border-radius: 8px; }
+    .viz-bar.tall > i { display: flex; align-items: center; justify-content: center; color: var(--on-btn); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
+    .viz-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
+    .viz-legend { display: flex; flex-direction: column; gap: 3px; font-size: 13px; }
+    .viz-legend > div { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; font-variant-numeric: tabular-nums; }
+    .viz-legend .sw { width: 12px; height: 12px; border-radius: 3px; }
+    .viz-legend .pct { min-width: 3.6em; text-align: right; font-weight: 800; }
+    .viz-legend > div.zero { color: var(--muted); }
+    .prow { display: grid; grid-template-columns: 5.5em minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 13px; padding-block: 3px; }
+    .prow .nm { font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .prow .nm small { color: var(--muted); font-weight: 500; margin-left: 4px; }
+    .prow .viz-bar { height: 14px; border-radius: 7px; }
+    .prow .v { font-variant-numeric: tabular-nums; font-weight: 700; text-align: right; min-width: 6.5em; }
+    .teamsw .note { margin-top: 6px; }
+    .teamsw { position: sticky; top: 0; z-index: 4; padding-block: 8px; background: var(--bg); }
     .def-row { padding-block: 8px; border-top: 1px solid var(--line); }
     .def-row:first-child { border-top: none; }
     .def-row b { display: block; font-size: 14px; }
@@ -1231,11 +1268,15 @@ function addStat(a, b) {
     return a;
 }
 // 配球分佈：依位置、依球員（被配球的人）
-function blankDist() { return { total: 0, byPos: {}, byPlayer: {} }; }
+function blankDist() { return { total: 0, byPos: {}, byPlayer: {}, byPlayerPos: {} }; }
 function addDist(a, b) {
     a.total += b.total;
     Object.keys(b.byPos).forEach(k => { a.byPos[k] = (a.byPos[k] || 0) + b.byPos[k]; });
     Object.keys(b.byPlayer).forEach(k => { a.byPlayer[k] = (a.byPlayer[k] || 0) + b.byPlayer[k]; });
+    Object.keys(b.byPlayerPos).forEach(pid => {
+        const t = a.byPlayerPos[pid] || (a.byPlayerPos[pid] = {});
+        Object.keys(b.byPlayerPos[pid]).forEach(k => { t[k] = (t[k] || 0) + b.byPlayerPos[pid][k]; });
+    });
     return a;
 }
 // 某位球員在「這一局」的位置：局開始前確認的位置 → 名單快照的主位置 → 球員資料的主位置
@@ -1339,6 +1380,7 @@ function computeMatchStats(match, db, opts) {
                 (rv.setTo || []).forEach(pid => {
                     const pos = positionOf(match, i, pid, db);
                     dist.total++; dist.byPos[pos] = (dist.byPos[pos] || 0) + 1; dist.byPlayer[pid] = (dist.byPlayer[pid] || 0) + 1;
+                    const pp = dist.byPlayerPos[pid] || (dist.byPlayerPos[pid] = {}); pp[pos] = (pp[pos] || 0) + 1;
                     P(pid).setTo++; team.setTo++;
                 });
                 if (end.skill === 'dig' && end.out === 'err' && end.p && !digs.some(d => d.p === end.p && !d.ok)) {
@@ -2875,7 +2917,7 @@ function viewHome() {
     });
     h += a2hsCardHtml();
     h += `<button class="btn-solid brand btn-start" data-action="new-match">開新比賽</button>`;
-    h += compareCardHtml(filterMatches(DB, null));
+    h += compareCardHtml(filterMatches(DB, { teamName: statsTeam() }), `最近一場 vs 上一場${teamNamesInHistory().length > 1 ? '（' + statsTeam() + '）' : ''}`);
     h += `<div class="card"><h2>備份與匯入</h2>
         ${staleBackup() ? `<div class="banner-warn">${DB.lastBackupAt ? `已經 ${Math.floor((Date.now() - DB.lastBackupAt) / 86400000)} 天沒有備份了` : '還沒有備份過'}，建議現在匯出一份。</div>` : ''}
         <div class="note">上次匯出：${esc(daysAgoText(DB.lastBackupAt))}。資料只存在這支手機上，記得定期匯出；匯出的紀錄檔可以在別的裝置匯入後接著用。</div>
@@ -3918,24 +3960,21 @@ function teamNamesInHistory() {
     return names.sort((a, b) => a.localeCompare(b, 'zh-Hant'));
 }
 function viewHistory() {
-    const names = teamNamesInHistory(), cur = ui.stats.team;
-    const list = matchHistory(DB, cur === 'all' ? null : { teamName: cur });
-    const filter = names.length > 1 ? `<div class="chips">${chipsHtml([{ value: 'all', label: '全部' }].concat(names.map(n => ({ value: n, label: n }))), [cur], 'stats-team')}</div>` : '';
-    return `${filter}
-        ${list.length ? `<div class="list">${list.map(r => `<button class="list-row" data-action="open-report" data-id="${esc(r.id)}"><span class="lr-main"><span class="lr-title">vs ${esc(r.opponent)}</span>
+    const list = matchHistory(DB, { teamName: statsTeam() });
+    return `${list.length ? `<div class="list">${list.map(r => `<button class="list-row" data-action="open-report" data-id="${esc(r.id)}"><span class="lr-main"><span class="lr-title">vs ${esc(r.opponent)}</span>
             <span class="lr-sub">${esc(r.date)}${r.event ? '・' + esc(r.event) : ''}・${esc(teamLabel(DB, r.teamId))}</span><span class="lr-sub">${r.sets.length ? esc(r.sets.join('　')) : '還沒有紀錄'}</span></span>
             ${r.status === 'live' ? '<span class="tagx">進行中</span>' : (r.result ? `<span class="tagx ${r.result === '勝' ? 'win' : 'lose'}">${r.result}</span>` : '')}<span class="lr-num">${r.us}:${r.them}</span></button>`).join('')}</div>` : '<div class="empty">還沒有比賽。<br>到「紀錄」開一場新比賽。</div>'}`;
 }
-ui.stats = { sub: 'history', team: 'all', f: { teamName: '', seasonId: '', event: '', from: '', to: '', reviewedOnly: false }, sort: { h: '得分', dir: 'desc' }, tip: null, table: false };
+ui.stats = { sub: 'history', f: { teamName: '', seasonId: '', event: '', from: '', to: '', reviewedOnly: false }, sort: { h: '得分', dir: 'desc' }, tip: null, table: false };
 function viewStats() {
     const t = ui.stats;
     return `<div class="page-inner col gutter"><div class="page-title"><h1>數據</h1><p>比賽歷史、跨場分析與球員生涯</p></div>
+        ${teamSwitchHtml()}
         ${segHtml([{ value: 'history', label: '比賽歷史' }, { value: 'cross', label: '跨場分析' }], t.sub, 'stats-sub')}
         ${t.sub === 'history' ? viewHistory() : viewCross()}</div>`;
 }
 TAB_VIEWS.stats = viewStats;
 ACT['stats-sub'] = el => { ui.stats.sub = el.dataset.v; ui.stats.tip = null; render(); };
-ACT['stats-team'] = el => { ui.stats.team = el.dataset.v; render(); };
 
 /* ===== 圖表（SVG）：單一座標軸、2px 線、≥8px 標記、淡色格線；點一下看數值，另有表格 ===== */
 function niceMax(v) {
@@ -3998,17 +4037,16 @@ const tipOf = k => (ui.stats.tip && ui.stats.tip.k === k ? ui.stats.tip.i : null
 
 /* ===== 跨場分析 ===== */
 const SF_LABEL = { teamName: '隊伍', seasonId: '賽季', event: '賽事' };
-function crossFilterHtml(names) {
+function crossFilterHtml() {
     const f = ui.stats.f, seasons = seasonsSorted(DB), events = distinctEvents(DB);
     return `<div class="card"><label>篩選</label>
-        ${names.length > 1 ? `<div class="chips">${chipsHtml([{ value: '', label: '全部隊伍' }].concat(names.map(n => ({ value: n, label: n }))), [f.teamName], 'sf-team')}</div>` : ''}
         <div class="field-row"><div class="field"><span>賽季</span><select class="input-text" data-live="sf-set" data-k="seasonId"><option value="">全部</option>${seasons.map(x => `<option value="${esc(x.id)}"${f.seasonId === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>
         <div class="field"><span>賽事</span><select class="input-text" data-live="sf-set" data-k="event"><option value="">全部</option>${events.map(x => `<option value="${esc(x)}"${f.event === x ? ' selected' : ''}>${esc(x)}</option>`).join('')}</select></div></div>
         <div class="field-row"><div class="field"><span>從</span><input type="date" class="input-text" data-live="sf-set" data-k="from" value="${esc(f.from)}"></div>
         <div class="field"><span>到</span><input type="date" class="input-text" data-live="sf-set" data-k="to" value="${esc(f.to)}"></div></div>
         <div class="chips"><button type="button" class="chip${f.reviewedOnly ? ' on' : ''}" data-action="sf-reviewed">只算有覆盤的比賽</button></div></div>`;
 }
-ACT['sf-team'] = el => { ui.stats.f.teamName = el.dataset.v; ui.stats.tip = null; render(); };
+ACT['sf-team'] = el => { ui.stats.f.teamName = el.dataset.v; ui.stats.tip = null; try { localStorage.setItem(STATS_TEAM_KEY, el.dataset.v); } catch (e) { /* 沒有儲存空間就算了 */ } render(); };
 ACT['sf-set'] = el => { ui.stats.f[el.dataset.k] = el.value; ui.stats.tip = null; render(); };
 ACT['sf-reviewed'] = () => { ui.stats.f.reviewedOnly = !ui.stats.f.reviewedOnly; ui.stats.tip = null; render(); };
 function compareCardHtml(list, title) {
@@ -4027,9 +4065,10 @@ function compareCardHtml(list, title) {
         ${c.prev ? '' : '<div class="note">只有一場比賽，還沒有可以比較的上一場。</div>'}</div>`;
 }
 function viewCross() {
-    const names = teamNamesInHistory(), f = ui.stats.f;
+    statsTeam();
+    const f = ui.stats.f;
     const list = filterMatches(DB, { teamName: f.teamName, seasonId: f.seasonId, event: f.event, from: f.from, to: f.to, reviewedOnly: f.reviewedOnly });
-    let h = crossFilterHtml(names);
+    let h = crossFilterHtml();
     if (!list.length) return h + '<div class="empty">沒有符合條件的比賽。<br>放寬篩選，或先記一場比賽。</div>';
     const agg = computeAggregate(DB, list), t = agg.team;
     h += `<div class="card"><h2>戰績總覽 <span class="note">${agg.n} 場・${agg.perMatch.reduce((a, r) => a + r.sets, 0)} 局</span></h2>
@@ -4039,6 +4078,8 @@ function viewCross() {
         <div class="vs-line"><span class="note">攻擊成功率</span><b>${fmtPct(t.attack.rate)}</b><span class="note">效率 ${fmtPct(t.attack.eff)}</span></div>
         ${agg.noteHighMatches ? `<div class="banner-warn">其中 ${agg.noteHighMatches} 場沒有記被守起，攻擊成功率會偏高。</div>` : ''}</div>`;
     h += compareCardHtml(list);
+    h += vizCardHtml(t, '累計');
+    h += distCardHtml(agg.dist, rvNameAny, '累計');
     // 團隊趨勢
     const labels = agg.perMatch.map(r => mmdd(r.date)), tip = tipOf('trend');
     const atk = agg.perMatch.map(r => r.attackPt), err = agg.perMatch.map(r => r.errors);
@@ -4118,6 +4159,73 @@ function barGroup(title, data, color, hi) {
 function metricRow(label, parts) {
     return `<div class="metric"><b>${label}</b><div class="mv">${parts.map(p => `<span><em>${p[0]}</em>${p[1]}</span>`).join('')}</div></div>`;
 }
+/* ===== 視覺化：對比條（左成功、右失敗）、配球百分比 ===== */
+const POS_VAR = { OH: 'var(--pos-oh)', MB: 'var(--pos-mb)', OPP: 'var(--pos-opp)', S: 'var(--pos-s)', '': 'var(--pos-none)' };
+const vpct = (n, tot) => tot ? Math.round(n / tot * 100) + '%' : '—';
+// segs: [{ cls:'good'|'mid'|'bad'|'err', n, label }]；左邊標籤 = 好的結果（good）的百分比，右邊 = 壞的結果（bad、err）合計的百分比
+function vsBar(title, segs, opt) {
+    const o = opt || {}, tot = segs.reduce((a, x) => a + x.n, 0);
+    if (!tot) return `<div class="viz"><div class="viz-head"><span class="viz-pill none">—</span><span class="viz-title">${esc(title)}</span><span class="viz-pill none">—</span></div><div class="note">${esc(o.empty || '還沒有資料')}</div></div>`;
+    const goodN = segs.filter(x => x.cls === 'good').reduce((a, x) => a + x.n, 0), badN = segs.filter(x => x.cls === 'bad' || x.cls === 'err').reduce((a, x) => a + x.n, 0);
+    const bar = segs.filter(x => x.n).map(x => `<i class="${x.cls}" style="flex:${x.n} 1 0">${o.tall ? Math.round(x.n / tot * 100) + '%' : ''}</i>`).join('');
+    const aria = `${title}：${segs.map(x => `${x.label} ${x.n}（${vpct(x.n, tot)}）`).join('、')}`;
+    return `<div class="viz" role="img" aria-label="${esc(aria)}"><div class="viz-head"><span class="viz-pill ${goodN ? 'good' : 'none'}">${vpct(goodN, tot)}</span><span class="viz-title">${esc(title)}</span><span class="viz-pill ${badN ? 'bad' : 'none'}">${vpct(badN, tot)}</span></div>
+        <div class="viz-bar${o.tall ? ' tall' : ''}">${bar}</div>
+        <div class="viz-foot">${segs.map(x => `<span>${esc(x.label)} ${x.n}</span>`).join('')}</div></div>`;
+}
+function posLegendHtml(byPos, total) {
+    return `<div class="viz-legend">${DIST_POSITIONS.filter(k => byPos[k] || k !== '').map(k => {
+        const n = byPos[k] || 0;
+        return `<div class="${n ? '' : 'zero'}"><i class="sw" style="background:${POS_VAR[k]}"></i><span>${esc(distPosLabel(k))}</span><span>${n} 球</span><span class="pct">${vpct(n, total)}</span></div>`;
+    }).join('')}</div>`;
+}
+function posBarHtml(byPos, total, tall, widthPct) {
+    return `<div class="viz-bar${tall ? ' tall' : ''}"${widthPct ? ` style="width:${widthPct}%"` : ''}>${DIST_POSITIONS.filter(k => byPos[k]).map(k => `<i style="flex:${byPos[k]} 1 0;background:${POS_VAR[k]}">${tall ? Math.round(byPos[k] / total * 100) + '%' : ''}</i>`).join('')}</div>`;
+}
+function distCardHtml(dist, nameOf, scope) {
+    if (!dist || !dist.total) return `<div class="card rp-card"><h2>${scope}：舉球配球</h2><div class="empty">還沒有配球資料。<br>到「逐球覆盤」每一球記「舉給誰」，這裡就會出現。</div></div>`;
+    const pids = Object.keys(dist.byPlayer).sort((a, b) => dist.byPlayer[b] - dist.byPlayer[a]), top = dist.byPlayer[pids[0]];
+    return `<div class="card rp-card"><h2>${scope}：舉球配球 <span class="note">${dist.total} 球</span></h2>
+        <div class="sub-label">配給哪個位置</div>${posBarHtml(dist.byPos, dist.total, true)}${posLegendHtml(dist.byPos, dist.total)}
+        <div class="sub-label" style="margin-top:10px">配給誰</div>
+        ${pids.map(pid => `<div class="prow"><span class="nm">${esc(nameOf(pid))}</span>${posBarHtml(dist.byPlayerPos[pid] || {}, dist.byPlayer[pid], false, Math.max(6, Math.round(dist.byPlayer[pid] / top * 100)))}<span class="v">${dist.byPlayer[pid]} 球 ${vpct(dist.byPlayer[pid], dist.total)}</span></div>`).join('')}
+        <div class="note">條的長度 = 配球數（跟最多的人比）。顏色 = 那位球員「那一局」的位置（大砲／欄中／舉對／舉球員自己）。位置在每局開始前確認；有雙重位置的人以確認的為準。</div></div>`;
+}
+// 團隊對比條：攻擊、發球、接發、防守
+function vizCardHtml(t, scope) {
+    const a = t.attack, sv = t.serve, rc = t.receive, dg = t.dig;
+    let h = `<div class="card rp-card"><h2>${scope}：成功與失敗</h2>`;
+    h += vsBar('攻擊', [{ cls: 'good', n: a.pt, label: '得分' }, { cls: 'mid', n: a.dug, label: '被守起' }, { cls: 'bad', n: a.err, label: '失誤' }], { tall: true });
+    h += sv.total ? vsBar('發球', [{ cls: 'good', n: sv.pt, label: 'ACE' }, { cls: 'mid', n: Math.max(0, sv.total - sv.pt - sv.err), label: '一般' }, { cls: 'bad', n: sv.err, label: '失誤' }], { tall: true }) : vsBar('發球', [], { empty: '沒有先發陣容，算不出發球總數' });
+    h += vsBar('接發', [{ cls: 'good', n: rc.good, label: '到位' }, { cls: 'mid', n: rc.run, label: '需要跑動' }, { cls: 'bad', n: rc.bad, label: '壞球' }, { cls: 'err', n: rc.err, label: '失誤' }], { tall: true, empty: '還沒有逐球覆盤' });
+    h += vsBar('防守起球', [{ cls: 'good', n: dg.ok, label: '起球' }, { cls: 'bad', n: dg.no, label: '沒起' }], { tall: true, empty: '還沒有逐球覆盤' });
+    if (dg.good + dg.run + dg.bad) h += vsBar('起球品質', [{ cls: 'good', n: dg.good, label: '到位' }, { cls: 'mid', n: dg.run, label: '需要跑動' }, { cls: 'bad', n: dg.bad, label: '壞球' }], { tall: true });
+    return h + '<div class="note">左邊 = 好的結果，右邊 = 壞的結果；百分比 = 佔該項全部次數的比例。</div></div>';
+}
+// 隊伍切換（A隊／B隊）：數據頁、跨場分析、首頁比較都用同一個
+const STATS_TEAM_KEY = 'ntuche.statsTeam';
+function statsTeam() {
+    const names = teamNamesInHistory();
+    let cur = ui.stats.f.teamName;
+    if (cur && names.indexOf(cur) === -1) cur = '';
+    if (!cur && names.length) {
+        let saved = '';
+        try { saved = localStorage.getItem(STATS_TEAM_KEY) || ''; } catch (e) { saved = ''; }
+        if (names.indexOf(saved) !== -1) cur = saved;
+        else {
+            const latest = Object.values(DB.matches).sort((x, y) => String(y.date).localeCompare(String(x.date)) || (y.createdAt || 0) - (x.createdAt || 0))[0];
+            const t = latest && DB.teams[latest.teamId];
+            cur = t && names.indexOf(t.name) !== -1 ? t.name : names[0];
+        }
+    }
+    ui.stats.f.teamName = cur || '';
+    return cur || '';
+}
+function teamSwitchHtml() {
+    const names = teamNamesInHistory(), cur = statsTeam();
+    if (names.length < 2) return names.length ? `<div class="teamsw"><div class="note">目前顯示：<b>${esc(names[0])}</b> 的數據</div></div>` : '';
+    return `<div class="teamsw">${segHtml(names.map(n => ({ value: n, label: n })), cur, 'sf-team')}<div class="note">目前顯示：<b>${esc(cur)}</b> 的數據（A、B 隊分開計算）</div></div>`;
+}
 function reportHtml(m) {
     const sum = matchSummary(m), idx = ui.report.setIdx;
     const ms = computeMatchStats(m, DB, idx === null ? null : { setIdx: idx });
@@ -4150,6 +4258,8 @@ function reportHtml(m) {
         ${metricRow('連續', [['最多連得', runTxt(ms.runs.us)], ['最多連失', runTxt(ms.runs.them)]])}
         ${TALLY_KEYS.some(k => ms.tally[k]) ? metricRow('舊配球', TALLY_KEYS.map(k => [k, ms.tally[k]])) : ''}
         ${ms.tracked ? '' : '<div class="note">這個範圍沒有先發陣容，發球總數與發球成功率顯示「—」。</div>'}</div>`;
+    h += vizCardHtml(t, scope);
+    h += distCardHtml(ms.dist, pid => nameOfIn(m, DB, pid), scope);
     // 個人表
     const cols = STAT_COLUMNS.filter(c => c.t);
     const ids = reportPlayerIds(m, ms);
