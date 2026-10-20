@@ -1484,6 +1484,18 @@ function exportDbObject(db) {
     o.exportedAt = Date.now();
     return o;
 }
+// 名單檔（給記錄的人）：球員、賽季、隊伍（含預設陣容）；不帶任何比賽、球員備註、衝突暫存、備份時間。
+// 設定只帶隊名標題與「預設填先發」，其他（外觀等）用預設值
+function exportRosterObject(db) {
+    const o = newDb();
+    o.deviceId = db.deviceId;
+    o.settings.teamTitle = db.settings.teamTitle;
+    o.settings.trackLineupDefault = db.settings.trackLineupDefault;
+    ['players', 'seasons', 'teams'].forEach(k => { Object.keys(db[k]).forEach(id => { o[k][id] = clone(db[k][id]); }); });
+    Object.values(o.players).forEach(p => { p.note = ''; });
+    o.exportedAt = Date.now();
+    return o;
+}
 // 單場分享：只帶那一場，加上它用到的球員、隊伍、賽季
 function exportMatchObject(db, matchId) {
     const m = db.matches[matchId];
@@ -2488,6 +2500,25 @@ function runSelfTests() {
         const r = migrate(JSON.parse(JSON.stringify(o)));
         ok(r.ok, '打包結果可以被讀回');
     });
+    T('名單檔：只有球員、賽季、隊伍；沒有比賽、備註；匯入空的資料庫後名單與預設陣容都在', () => {
+        const db = newDb();
+        db.players.X = Object.assign(newPlayer({ name: 'X' }), { id: 'X', note: '私人備註' });
+        db.seasons.s1 = { id: 's1', name: '114-1', updatedAt: 1 };
+        db.teams.t1 = { id: 't1', seasonId: 's1', name: 'A隊', members: ['X'], defaultLineup: newLineup({ 1: 'X' }, null), updatedAt: 1 };
+        const m = newMatch({ teamId: 't1', opponent: 'O', formatKey: 'bo3', date: '2026-10-19' }); db.matches[m.id] = m;
+        db.settings.teamTitle = '台大化工男排'; db.settings.theme = 'dark'; db.lastBackupAt = 99;
+        db.matches_conflict.c1 = { id: 'c1', matchId: m.id, at: 1, match: m };
+        const o = exportRosterObject(db);
+        eq([Object.keys(o.matches).length, Object.keys(o.matches_conflict).length, o.lastBackupAt], [0, 0, null], '沒有比賽與暫存');
+        eq([o.players.X.note, db.players.X.note], ['', '私人備註'], '備註清掉、原資料不動');
+        eq([o.settings.teamTitle, o.settings.theme === 'dark'], ['台大化工男排', false], '設定只帶隊名');
+        eq([o.teams.t1.members, o.teams.t1.defaultLineup.slots[1]], [['X'], 'X'], '成員與預設陣容');
+        const local = newDb(), r = migrate(JSON.parse(JSON.stringify(o)));
+        ok(r.ok, '可以被讀回');
+        const plan = planMerge(local, r.db);
+        eq(plan.items.map(i => i.kind + ':' + i.action).sort(), ['players:add', 'seasons:add', 'teams:add'], '匯入空的資料庫＝全部新增');
+        ok(plan.adoptSettings, '空的資料庫會採用隊名設定');
+    });
     T('防守類型：接扣／接吊／Cover／接嗆司各自統計起球與沒起，沒分類的歸在空字串', () => {
         const m = fixtureMatch();
         const ev = m.sets[0].log.filter(e => e.out !== 'cont');
@@ -2957,6 +2988,7 @@ async function exportJson(obj, filename, markBackup) {
     gtoast(r === 'download' ? `已下載：${filename}` : '已匯出');
 }
 ACT['export-all'] = () => exportJson(exportDbObject(DB), `化工男排資料_${dateForFile()}.json`, true);
+ACT['export-roster'] = () => exportJson(exportRosterObject(DB), `化工男排名單_${dateForFile()}.json`, false);
 ACT['export-match'] = el => {
     const m = DB.matches[el.dataset.id];
     if (!m) return;
@@ -3071,6 +3103,9 @@ function viewHome() {
         <div class="note">上次匯出：${esc(daysAgoText(DB.lastBackupAt))}。資料只存在這支手機上，記得定期匯出；匯出的紀錄檔可以在別的裝置匯入後接著用。</div>
         <button class="btn-solid" data-action="export-all">匯出紀錄檔</button>
         <div class="row"><button class="btn-solid ghost" style="flex:1" data-action="import-file">匯入紀錄檔</button><button class="btn-solid ghost" style="flex:1" data-action="import-paste">貼上文字匯入</button></div>
+        <div class="sub-label" style="margin-top:10px">給記錄的人</div>
+        <div class="note">名單檔只有球員、隊伍與預設陣容，沒有任何比賽紀錄和備註。對方用「匯入紀錄檔」匯入後就能記錄；請他<b>不要自己新增或修改球員</b>，記完用「匯出這一場的紀錄檔」傳給你，你匯入後再上傳雲端。</div>
+        <button class="btn-solid ghost" data-action="export-roster">匯出名單檔（不含比賽）</button>
         <dl class="kv"><dt>球員</dt><dd>${Object.keys(DB.players).length} 位</dd><dt>比賽</dt><dd>${Object.keys(DB.matches).length} 場</dd></dl></div>`;
     if (conflicts.length) {
         h += `<div class="card"><h2>暫存的衝突版本</h2><div class="note">匯入時兩邊都有改過的比賽，被覆蓋的那一份放在這裡。</div>${conflicts.map(c => `
@@ -4873,7 +4908,8 @@ function cloudCardHtml() {
     return `<div class="card"><h2>雲端分享</h2>
         <div class="note">把選的比賽加密上傳，隊友用連結加觀看密碼就能看最新數據（唯讀）。${meta ? `上次上傳：${esc(fmtDateTime(meta.at))}（${meta.n} 場）。` : '還沒有上傳過。'}</div>
         <button class="btn-solid brand" data-action="cloud-open">上傳到雲端</button>
-        <div class="row"><button class="btn-solid ghost" style="flex:1" data-action="cloud-link">複製觀看連結</button><button class="btn-solid ghost" style="flex:1" data-action="cloud-settings">雲端設定</button></div></div>`;
+        <div class="row"><button class="btn-solid ghost" style="flex:1" data-action="cloud-link">複製觀看連結</button><button class="btn-solid ghost" style="flex:1" data-action="cloud-settings">雲端設定</button></div>
+        <button class="btn-solid ghost" data-action="view-enter">看雲端數據（唯讀）</button></div>`;
 }
 
 /* --- 觀看端（網址加 #view）：唯讀，資料只放記憶體，不碰這支手機上的本機資料庫 --- */
@@ -4894,7 +4930,7 @@ function gateHtml() {
         ${g.msg ? `<div class="banner-warn">${esc(g.msg)}</div>` : ''}<button class="btn-solid brand block" data-action="view-unlock">看數據</button>`;
     else body = `<div class="banner-warn">${esc(g.msg)}</div><button class="btn-solid brand block" data-action="view-refresh">再試一次</button>`;
     return `<div class="page-inner col gutter"><div class="page-title"><h1>${esc(DB.settings.teamTitle)}</h1><p>數據（唯讀）</p></div><div class="card">${body}</div>
-        <button class="btn-solid ghost block" data-action="view-exit">我要用自己的紀錄（離開唯讀模式）</button></div>`;
+        <button class="btn-solid ghost block" data-action="view-exit">切換到本機紀錄（自己記錄、匯入名單）</button></div>`;
 }
 TAB_VIEWS.gate = gateHtml;
 let viewEnv = null;
@@ -4929,8 +4965,10 @@ async function viewDecrypt(pw, silent) {
 ACT['view-unlock'] = () => { const pw = String(F('vwPw', '')); if (pw) viewDecrypt(pw, false); };
 ACT['view-refresh'] = () => { viewStart(true); };
 ACT['view-exit'] = () => { lsRemove(CLOUD_KEYS.mode); location.hash = '#edit'; location.reload(); };
+// 完整版 → 看雲端數據（唯讀）；記錄的人要看大家的數據時用
+ACT['view-enter'] = () => { lsSet(CLOUD_KEYS.mode, 'view'); location.hash = '#view'; location.reload(); };
 function viewBannerHtml() {
-    return `<div class="view-banner"><span>唯讀・資料更新於 ${esc(viewEnv && viewEnv.at ? fmtDateTime(viewEnv.at) : '—')}</span><span><button class="btn-solid ghost small" data-action="view-refresh">重新整理</button> <button class="btn-solid ghost small" data-action="view-exit">離開</button></span></div>`;
+    return `<div class="view-banner"><span>唯讀・資料更新於 ${esc(viewEnv && viewEnv.at ? fmtDateTime(viewEnv.at) : '—')}</span><span><button class="btn-solid ghost small" data-action="view-refresh">重新整理</button> <button class="btn-solid ghost small" data-action="view-exit">切換到本機紀錄</button></span></div>`;
 }
 
 /* ===== 啟動後：有進行中的比賽就提示繼續 ===== */
