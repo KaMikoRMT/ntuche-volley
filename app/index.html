@@ -464,6 +464,16 @@
     .prow .viz-bar { height: 14px; border-radius: 7px; }
     .prow .v { font-variant-numeric: tabular-nums; font-weight: 700; text-align: right; min-width: 6.5em; }
     .teamsw .note { margin-top: 6px; }
+    .viewmode #tabbar { display: none; }
+    .view-banner { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px 12px; border-radius: 8px; background: var(--chip); border: 1px solid var(--chip-line); font-size: 13px; font-weight: 700; }
+    .pick-list { display: flex; flex-direction: column; gap: 6px; max-height: 38vh; overflow-y: auto; }
+    .pick-row { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: center; text-align: left; border: 1px solid var(--chip-line); background: var(--chip); color: var(--ink); border-radius: 10px; padding: 8px 10px; min-height: 48px; }
+    .pick-row.on { border-color: var(--chip-on); background: var(--surface); }
+    .pk-box { width: 22px; height: 22px; border-radius: 6px; border: 2px solid var(--chip-line); display: flex; align-items: center; justify-content: center; font-weight: 800; color: var(--on-btn); }
+    .pick-row.on .pk-box { background: var(--chip-on); border-color: var(--chip-on); }
+    .pk-main b, .pk-main small { display: block; }
+    .pk-main small { color: var(--muted); font-size: 12px; }
+    .pk-res { font-weight: 800; font-variant-numeric: tabular-nums; font-size: 14px; }
     .teamsw { position: sticky; top: 0; z-index: 4; padding-block: 8px; background: var(--bg); }
     .def-row { padding-block: 8px; border-top: 1px solid var(--line); }
     .def-row:first-child { border-top: none; }
@@ -1494,6 +1504,28 @@ function exportMatchObject(db, matchId) {
     o.matches_conflict = {};
     return o;
 }
+// 雲端分享：把選的幾場（連同用到的球員、隊伍、賽季）打包成唯讀資料。
+// 球員備註、設定、衝突暫存、備份時間都不帶；隊伍的成員名單也不帶（只留球員姓名與出賽用到的人）
+function buildPublishObject(db, matchIds) {
+    const o = newDb();
+    o.deviceId = db.deviceId;
+    matchIds.forEach(id => {
+        const m = db.matches[id];
+        if (!m) return;
+        o.matches[m.id] = clone(m);
+        const pids = matchParticipants(m);
+        m.roster.forEach(r => pids.add(r.playerId));
+        pids.forEach(pid => { if (db.players[pid] && !o.players[pid]) { o.players[pid] = clone(db.players[pid]); o.players[pid].note = ''; } });
+        const t = db.teams[m.teamId];
+        if (t && !o.teams[t.id]) {
+            o.teams[t.id] = clone(t);
+            o.teams[t.id].members = [];
+            if (db.seasons[t.seasonId] && !o.seasons[t.seasonId]) o.seasons[t.seasonId] = clone(db.seasons[t.seasonId]);
+        }
+    });
+    o.exportedAt = Date.now();
+    return o;
+}
 function dbIsEmpty(db) {
     return !['players', 'seasons', 'teams', 'matches'].some(k => Object.keys(db[k]).length);
 }
@@ -2435,6 +2467,27 @@ function runSelfTests() {
         eq(m.review[ev[0].id].digs[3].q, '', '沒起不存品質');
         eq(normGrade('poor'), 'run'); eq(normGrade('xxx'), 'err'); eq(normQuality('good'), 'good'); eq(normQuality('spike'), '');
     });
+    T('雲端分享：只打包選的比賽；不帶球員備註、其他球員、隊伍成員；打包後統計一樣', () => {
+        const db = newDb();
+        const mk = (id, opp) => { const m = newMatch({ teamId: 't1', opponent: opp, formatKey: 'bo3', date: '2026-10-19' }); m.id = id; m.roster = [{ playerId: 'X', name: 'X', number: '', positions: [] }, { playerId: 'Y', name: 'Y', number: '', positions: [] }]; return m; };
+        const m1 = mk('m1', 'A'), m2 = mk('m2', 'B');
+        m1.sets[0].log.push(E('attack', 'pt', 'X', 'spike'));
+        db.matches.m1 = m1; db.matches.m2 = m2;
+        db.players.X = Object.assign(newPlayer({ name: 'X' }), { id: 'X', note: '私人備註' });
+        db.players.Y = Object.assign(newPlayer({ name: 'Y' }), { id: 'Y' });
+        db.players.Z = Object.assign(newPlayer({ name: 'Z' }), { id: 'Z' });
+        db.seasons.s1 = { id: 's1', name: '114-1' }; db.teams.t1 = { id: 't1', seasonId: 's1', name: 'A隊', members: ['X', 'Y', 'Z'] };
+        db.settings.teamTitle = '不該帶出去'; db.lastBackupAt = 123;
+        const o = buildPublishObject(db, ['m1', 'nope']);
+        eq(Object.keys(o.matches), ['m1'], '只有選的那一場');
+        eq(Object.keys(o.players).sort(), ['X', 'Y'], '沒上場的 Z 不帶');
+        eq(o.players.X.note, '', '備註清掉'); eq(db.players.X.note, '私人備註', '原資料不動');
+        eq(o.teams.t1.members, [], '隊伍成員名單不帶'); eq(Object.keys(o.seasons), ['s1']);
+        eq([o.lastBackupAt, o.settings.teamTitle === db.settings.teamTitle], [null, false], '設定、備份時間不帶');
+        eq(computeMatchStats(o.matches.m1, o).team.attack.pt, computeMatchStats(m1, db).team.attack.pt, '統計一樣');
+        const r = migrate(JSON.parse(JSON.stringify(o)));
+        ok(r.ok, '打包結果可以被讀回');
+    });
     T('防守類型：接扣／接吊／Cover／接嗆司各自統計起球與沒起，沒分類的歸在空字串', () => {
         const m = fixtureMatch();
         const ev = m.sets[0].log.filter(e => e.out !== 'cont');
@@ -3012,6 +3065,7 @@ function viewHome() {
     h += a2hsCardHtml();
     h += `<button class="btn-solid brand btn-start" data-action="new-match">開新比賽</button>`;
     h += compareCardHtml(filterMatches(DB, { teamName: statsTeam() }), `最近一場 vs 上一場${teamNamesInHistory().length > 1 ? '（' + statsTeam() + '）' : ''}`);
+    h += cloudCardHtml();
     h += `<div class="card"><h2>備份與匯入</h2>
         ${staleBackup() ? `<div class="banner-warn">${DB.lastBackupAt ? `已經 ${Math.floor((Date.now() - DB.lastBackupAt) / 86400000)} 天沒有備份了` : '還沒有備份過'}，建議現在匯出一份。</div>` : ''}
         <div class="note">上次匯出：${esc(daysAgoText(DB.lastBackupAt))}。資料只存在這支手機上，記得定期匯出；匯出的紀錄檔可以在別的裝置匯入後接著用。</div>
@@ -4062,7 +4116,7 @@ function viewHistory() {
 ui.stats = { sub: 'history', f: { teamName: '', seasonId: '', event: '', from: '', to: '', reviewedOnly: false }, sort: { h: '得分', dir: 'desc' }, tip: null, table: false };
 function viewStats() {
     const t = ui.stats;
-    return `<div class="page-inner col gutter"><div class="page-title"><h1>數據</h1><p>比賽歷史、跨場分析與球員生涯</p></div>
+    return `<div class="page-inner col gutter">${VIEW_MODE ? viewBannerHtml() : ''}<div class="page-title"><h1>數據</h1><p>比賽歷史、跨場分析與球員生涯</p></div>
         ${teamSwitchHtml()}
         ${segHtml([{ value: 'history', label: '比賽歷史' }, { value: 'cross', label: '跨場分析' }], t.sub, 'stats-sub')}
         ${t.sub === 'history' ? viewHistory() : viewCross()}</div>`;
@@ -4331,7 +4385,7 @@ function reportHtml(m) {
     const resultTag = m.status === 'live' ? '<span class="tagx">進行中</span>' : (sum.done ? `<span class="tagx ${sum.winner === 'us' ? 'win' : 'lose'}">${sum.winner === 'us' ? '勝' : '敗'}</span>` : '<span class="tagx">未分勝負</span>');
     const started = sum.sets.filter(x => x.started);
     let h = `<div class="page-inner col gutter">
-        ${m.status === 'done' && (!DB.lastBackupAt || DB.lastBackupAt < m.updatedAt) ? `<div class="banner-warn">這場比賽還沒備份。<button class="btn-solid small" style="margin-left:8px" data-action="export-all">匯出紀錄檔</button></div>` : ''}
+        ${!VIEW_MODE && m.status === 'done' && (!DB.lastBackupAt || DB.lastBackupAt < m.updatedAt) ? `<div class="banner-warn">這場比賽還沒備份。<button class="btn-solid small" style="margin-left:8px" data-action="export-all">匯出紀錄檔</button></div>` : ''}
         <div class="card"><div class="rp-top"><div><div class="card-label">vs ${esc(m.opponent)}</div><div class="note">${esc(m.date)}${m.event ? '・' + esc(m.event) : ''}・${esc(teamLabel(DB, m.teamId))}${m.recorder ? '・紀錄：' + esc(m.recorder) : ''}</div></div>${resultTag}</div>
             <div class="rp-top"><span class="rp-result">${sum.us} : ${sum.them}</span><span class="note">${esc(FORMATS[m.format.bestOf === 5 ? 'bo5' : 'bo3'].label)}</span></div>
             <div class="rp-sets">${started.map(x => `<span class="tagx">第 ${x.no} 局 ${x.score.us}:${x.score.them}</span>`).join('') || '<span class="note">還沒有紀錄</span>'}</div></div>
@@ -4370,11 +4424,11 @@ function reportHtml(m) {
     // 動作
     const prog = reviewProgress(m, {});
     h += `<div class="card rp-card"><h2>匯出與其他</h2>
-        <button class="btn-solid brand block" data-action="open-review" data-id="${esc(m.id)}">逐球覆盤（已覆盤 ${prog.done}／${prog.total} 球）</button>
+        ${VIEW_MODE ? '' : `<button class="btn-solid brand block" data-action="open-review" data-id="${esc(m.id)}">逐球覆盤（已覆盤 ${prog.done}／${prog.total} 球）</button>`}
         <button class="btn-solid brand block" data-action="open-preview" data-id="${esc(m.id)}">正字紀錄表（PNG／PDF）</button>
         <button class="btn-solid block" data-action="export-csv">匯出${scope}數據表（CSV）</button>
-        <button class="btn-solid ghost block" data-action="export-match" data-id="${esc(m.id)}">匯出這一場的紀錄檔（.json）</button>
-        ${m.status === 'live' ? `<button class="btn-solid ghost block" data-action="resume-match" data-id="${esc(m.id)}">繼續紀錄</button>` : `<button class="btn-solid ghost block" data-action="reopen-match" data-id="${esc(m.id)}">重新開啟紀錄（補記或修正）</button>`}</div></div>`;
+        ${VIEW_MODE ? '' : `<button class="btn-solid ghost block" data-action="export-match" data-id="${esc(m.id)}">匯出這一場的紀錄檔（.json）</button>`}
+        ${VIEW_MODE ? '' : m.status === 'live' ? `<button class="btn-solid ghost block" data-action="resume-match" data-id="${esc(m.id)}">繼續紀錄</button>` : `<button class="btn-solid ghost block" data-action="reopen-match" data-id="${esc(m.id)}">重新開啟紀錄（補記或修正）</button>`}</div></div>`;
     return h;
 }
 function renderReport() {
@@ -4599,6 +4653,286 @@ SHEETS.rvList = () => {
 };
 ACT['rv-jump'] = el => { closeSheet(); rvGo(Number(el.dataset.i)); };
 
+/* ===== CLOUD：加密上傳（給隊友看）與唯讀觀看 =====
+   雲端 = 一個公開的 GitHub repo 裡的一個檔案。檔案是「用觀看密碼加密過」的資料，沒有密碼只是亂碼。
+   寫入要有 GitHub 的 fine-grained token（只存在上傳者的手機，而且用「上傳密碼」加密後才存）；觀看不需要 token。 */
+const CLOUD = { repo: 'KaMikoRMT/ntuche-volley-data', file: 'published.json', pagesUrl: 'https://kamikormt.github.io/ntuche-volley/', iter: 210000 };
+const CLOUD_KEYS = { secrets: 'ntuche.cloud', meta: 'ntuche.cloudMeta', sel: 'ntuche.cloudSel', mode: 'ntuche.mode', viewPw: 'ntuche.viewPw' };
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); return true; } catch (e) { return false; } };
+const lsRemove = k => { try { localStorage.removeItem(k); } catch (e) { /* 沒有儲存空間就算了 */ } };
+const lsJson = (k, dflt) => { try { const v = JSON.parse(lsGet(k)); return v == null ? dflt : v; } catch (e) { return dflt; } };
+function cloudSupported() { return !!(window.crypto && crypto.subtle && window.TextEncoder); }
+function b64enc(bytes) {
+    let bin = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(bin);
+}
+function b64dec(str) {
+    const bin = atob(str), out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+}
+async function pipeBytes(bytes, stream) {
+    const w = stream.writable.getWriter();
+    w.write(bytes); w.close();
+    return new Uint8Array(await new Response(stream.readable).arrayBuffer());
+}
+async function deriveAesKey(password, salt, iter) {
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: iter, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+// 文字 → 加密信封（可以直接存成 JSON）；有 CompressionStream 就先壓縮（z: 1）
+async function encryptText(text, password) {
+    let bytes = new TextEncoder().encode(text), z = 0;
+    if (typeof CompressionStream === 'function') { try { bytes = await pipeBytes(bytes, new CompressionStream('gzip')); z = 1; } catch (e) { z = 0; bytes = new TextEncoder().encode(text); } }
+    const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveAesKey(password, salt, CLOUD.iter);
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, bytes));
+    return { app: 'ntuche-volley', v: 1, kdf: 'PBKDF2-SHA256', iter: CLOUD.iter, z, salt: b64enc(salt), iv: b64enc(iv), ct: b64enc(ct) };
+}
+// 密碼不對會丟 Error('bad-password')；信封格式不認得丟 Error('bad-envelope')
+async function decryptEnvelope(env, password) {
+    if (!env || env.app !== 'ntuche-volley' || env.v !== 1 || !env.ct || !env.salt || !env.iv) throw new Error('bad-envelope');
+    let bytes;
+    try {
+        const key = await deriveAesKey(password, b64dec(env.salt), env.iter || CLOUD.iter);
+        bytes = new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64dec(env.iv) }, key, b64dec(env.ct)));
+    } catch (e) { throw new Error('bad-password'); }
+    if (env.z) {
+        if (typeof DecompressionStream !== 'function') throw new Error('no-decompress');
+        bytes = await pipeBytes(bytes, new DecompressionStream('gzip'));
+    }
+    return new TextDecoder().decode(bytes);
+}
+const fmtDateTime = ts => { const d = new Date(ts); return `${d.getMonth() + 1}/${d.getDate()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+const viewLink = () => (/^https?:$/.test(location.protocol) ? location.origin + location.pathname : CLOUD.pagesUrl) + '#view';
+
+/* --- GitHub 讀寫 --- */
+const ghUrl = (path) => `https://api.github.com/repos/${CLOUD.repo}/contents/${path}`;
+function ghError(status) {
+    if (status === 401) return '金鑰（token）無效或已過期，請到「雲端設定」重新輸入。';
+    if (status === 403) return '金鑰沒有寫入這個雲端的權限，或 GitHub 暫時限制了請求；請確認 token 的 Contents 權限是「Read and write」。';
+    if (status === 404) return `找不到雲端 repo「${CLOUD.repo}」，或這把金鑰沒有包含它。`;
+    if (status === 409 || status === 422) return '雲端的檔案剛好被更新，請再按一次上傳。';
+    return `GitHub 回應了錯誤（${status}），請稍後再試。`;
+}
+async function cloudPut(token, text) {
+    const h = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' };
+    for (let attempt = 0; attempt < 2; attempt++) {
+        let sha;
+        const g = await fetch(ghUrl(CLOUD.file), { headers: h, cache: 'no-store' });
+        if (g.ok) sha = (await g.json()).sha;
+        else if (g.status !== 404) throw new Error(ghError(g.status));
+        const body = { message: `publish ${new Date().toISOString()}`, content: btoa(text) };
+        if (sha) body.sha = sha;
+        const r = await fetch(ghUrl(CLOUD.file), { method: 'PUT', headers: Object.assign({ 'Content-Type': 'application/json' }, h), body: JSON.stringify(body) });
+        if (r.ok) return true;
+        if ((r.status === 409 || r.status === 422) && attempt === 0) continue;
+        throw new Error(ghError(r.status));
+    }
+    return false;
+}
+// 觀看端：不用 token。先用 API（較新），被限流或失敗再改讀 raw
+async function cloudGet() {
+    let notFound = false;
+    try {
+        const r = await fetch(ghUrl(CLOUD.file), { headers: { Accept: 'application/vnd.github.raw+json' }, cache: 'no-store' });
+        if (r.ok) return await r.text();
+        if (r.status === 404) notFound = true;
+    } catch (e) { /* 改試 raw */ }
+    try {
+        const r = await fetch(`https://raw.githubusercontent.com/${CLOUD.repo}/HEAD/${CLOUD.file}`, { cache: 'no-store' });
+        if (r.ok) return await r.text();
+        if (r.status === 404) notFound = true;
+    } catch (e) { /* 下面統一處理 */ }
+    throw new Error(notFound ? 'not-found' : 'network');
+}
+
+/* --- 上傳端 --- */
+let cloudSecrets = null;       // 解鎖後放在記憶體：{ token, viewPw }，網頁關掉就沒了
+ui.cloud = { sel: null, busy: false, msg: '', done: null };
+const cloudConfigured = () => !!lsGet(CLOUD_KEYS.secrets);
+ACT['cloud-open'] = () => {
+    if (!cloudSupported()) { showMessage('這個環境不能上傳', '需要用網址版（https）在手機或電腦的瀏覽器開啟，才有加密功能。'); return; }
+    if (!cloudConfigured()) { openSheet('cloudSetup', {}); return; }
+    if (!cloudSecrets) { openSheet('cloudUnlock', {}); return; }
+    cloudOpenPick();
+};
+ACT['cloud-settings'] = () => openSheet('cloudSetup', {});
+function cloudOpenPick() {
+    const rows = matchHistory(DB, null), saved = lsJson(CLOUD_KEYS.sel, null);
+    const valid = new Set(rows.map(r => r.id));
+    ui.cloud.sel = new Set((saved ? saved.filter(id => valid.has(id)) : rows.filter(r => r.status === 'done').map(r => r.id)));
+    ui.cloud.busy = false; ui.cloud.msg = ''; ui.cloud.done = null;
+    openSheet('cloudPick', {});
+}
+SHEETS.cloudSetup = d => ({
+    title: '雲端設定',
+    html: `<p class="note">要填三樣東西。<b>金鑰</b>是 GitHub 的 fine-grained token（只有這個雲端 repo 的 Contents 寫入權限）；<b>觀看密碼</b>是隊友看數據時要輸入的；<b>上傳密碼</b>只有你自己用，用來鎖住金鑰，之後每次上傳前要先輸入。三樣都只存在這支手機（金鑰與觀看密碼會用上傳密碼加密後才存）。</p>
+        <div class="field"><span>GitHub 金鑰（github_pat_…）</span><input class="input-text" type="password" data-field="csToken" value="${esc(F('csToken', ''))}" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+        <div class="field"><span>觀看密碼（給隊友，至少 6 個字）</span><input class="input-text" type="password" data-field="csView" value="${esc(F('csView', ''))}" autocomplete="off"></div>
+        <div class="field"><span>上傳密碼（只有你，至少 4 個字）</span><input class="input-text" type="password" data-field="csLocal" value="${esc(F('csLocal', ''))}" autocomplete="off" data-enter="cloud-setup-save"></div>
+        ${ui.sheet && ui.sheet.msg ? `<div class="banner-warn">${esc(ui.sheet.msg)}</div>` : ''}
+        <button class="btn-solid brand block" data-action="cloud-setup-save">儲存</button>
+        ${cloudConfigured() ? '<button class="btn-solid ghost block" data-action="cloud-clear">清除雲端設定</button>' : ''}`
+});
+ACT['cloud-setup-save'] = async () => {
+    const token = String(F('csToken', '')).trim(), viewPw = String(F('csView', '')), local = String(F('csLocal', ''));
+    const fail = m => { ui.sheet.msg = m; renderSheet(); };
+    if (!token) return fail('請貼上 GitHub 金鑰。');
+    if (viewPw.length < 6) return fail('觀看密碼至少 6 個字。');
+    if (local.length < 4) return fail('上傳密碼至少 4 個字。');
+    try {
+        const env = await encryptText(JSON.stringify({ token, viewPw }), local);
+        if (!lsSet(CLOUD_KEYS.secrets, JSON.stringify(env))) return fail('這個瀏覽器不能儲存設定（可能是無痕模式）。');
+    } catch (e) { return fail('加密失敗，這個瀏覽器可能不支援。'); }
+    cloudSecrets = { token, viewPw };
+    ['csToken', 'csView', 'csLocal'].forEach(k => { delete ui.fields[k]; });
+    cloudOpenPick();
+};
+ACT['cloud-clear'] = () => askConfirm('清除這支手機上的雲端設定（金鑰與密碼）？雲端上已經上傳的資料不會被刪掉。', '清除', () => { lsRemove(CLOUD_KEYS.secrets); cloudSecrets = null; gtoast('已清除'); });
+SHEETS.cloudUnlock = () => ({
+    title: '輸入上傳密碼',
+    html: `<p class="note">輸入你設定的「上傳密碼」，才能打開上傳。</p>
+        <div class="field"><input class="input-text" type="password" data-field="cuPw" value="${esc(F('cuPw', ''))}" autocomplete="off" data-enter="cloud-unlock-go" aria-label="上傳密碼"></div>
+        ${ui.sheet && ui.sheet.msg ? `<div class="banner-warn">${esc(ui.sheet.msg)}</div>` : ''}
+        <button class="btn-solid brand block" data-action="cloud-unlock-go">解鎖</button>
+        <button class="btn-solid ghost block" data-action="cloud-settings">重新設定</button>`
+});
+ACT['cloud-unlock-go'] = async () => {
+    const pw = String(F('cuPw', ''));
+    try {
+        const o = JSON.parse(await decryptEnvelope(JSON.parse(lsGet(CLOUD_KEYS.secrets)), pw));
+        cloudSecrets = { token: o.token, viewPw: o.viewPw };
+        delete ui.fields.cuPw;
+        cloudOpenPick();
+    } catch (e) { ui.sheet.msg = '上傳密碼不對。'; renderSheet(); }
+};
+SHEETS.cloudPick = () => {
+    const c = ui.cloud, rows = matchHistory(DB, null);
+    const names = teamNamesInHistory();
+    if (c.done) return {
+        title: '上傳完成',
+        html: `<p class="confirm-text">已上傳 ${c.done.n} 場（${esc(fmtDateTime(c.done.at))}）。</p>
+            <div class="note">隊友打開這個連結，輸入「觀看密碼」就能看到最新數據：</div>
+            <textarea class="input-text" id="viewLinkOut" readonly rows="2">${esc(viewLink())}</textarea>
+            <div class="note">密碼不在連結裡，請另外傳給隊友。之後你再上傳，他們重新整理就會看到新的。</div>
+            <button class="btn-solid brand block" data-action="cloud-copy-link">複製連結</button><button class="btn-solid ghost block" data-action="sheet-close">關閉</button>`
+    };
+    const meta = lsJson(CLOUD_KEYS.meta, null);
+    return {
+        title: '上傳到雲端',
+        html: `<p class="note">選要給隊友看的比賽。每次上傳都會用你選的場次「整份取代」雲端上的資料。${meta ? `上次上傳：${esc(fmtDateTime(meta.at))}（${meta.n} 場）。` : ''}</p>
+            <div class="chips"><button type="button" class="chip" data-action="cloud-pick-all" data-v="">全選</button><button type="button" class="chip" data-action="cloud-pick-none">全不選</button>${names.length > 1 ? names.map(n => `<button type="button" class="chip" data-action="cloud-pick-all" data-v="${esc(n)}">只選${esc(n)}</button>`).join('') : ''}</div>
+            <div class="pick-list">${rows.map(r => `<button type="button" class="pick-row${c.sel.has(r.id) ? ' on' : ''}" data-action="cloud-toggle" data-id="${esc(r.id)}"><span class="pk-box">${c.sel.has(r.id) ? '✓' : ''}</span><span class="pk-main"><b>vs ${esc(r.opponent)}</b><small>${esc(r.date)}・${esc(teamLabel(DB, r.teamId))}${r.status === 'live' ? '・進行中' : ''}</small></span><span class="pk-res">${r.result ? esc(r.result) + ' ' : ''}${r.us}:${r.them}</span></button>`).join('') || '<div class="empty">還沒有比賽。</div>'}</div>
+            ${c.msg ? `<div class="banner-warn">${esc(c.msg)}</div>` : ''}
+            <button class="btn-solid brand block" data-action="cloud-go"${c.busy || !c.sel.size ? ' disabled' : ''}>${c.busy ? '上傳中…' : `上傳 ${c.sel.size} 場`}</button>
+            <button class="btn-solid ghost block" data-action="cloud-settings">雲端設定</button>`
+    };
+};
+ACT['cloud-toggle'] = el => { const s = ui.cloud.sel, id = el.dataset.id; if (s.has(id)) s.delete(id); else s.add(id); renderSheet(); };
+ACT['cloud-pick-none'] = () => { ui.cloud.sel.clear(); renderSheet(); };
+ACT['cloud-pick-all'] = el => {
+    const name = el.dataset.v;
+    matchHistory(DB, name ? { teamName: name } : null).forEach(r => ui.cloud.sel.add(r.id));
+    renderSheet();
+};
+ACT['cloud-go'] = async () => {
+    const c = ui.cloud;
+    if (c.busy || !c.sel.size || !cloudSecrets) return;
+    c.busy = true; c.msg = ''; renderSheet();
+    const ids = Array.from(c.sel);
+    try {
+        const obj = buildPublishObject(DB, ids);
+        const env = await encryptText(JSON.stringify(obj), cloudSecrets.viewPw);
+        env.at = Date.now(); env.n = ids.length;
+        await cloudPut(cloudSecrets.token, JSON.stringify(env));
+        lsSet(CLOUD_KEYS.sel, JSON.stringify(ids));
+        lsSet(CLOUD_KEYS.meta, JSON.stringify({ at: env.at, n: ids.length }));
+        c.done = { n: ids.length, at: env.at };
+    } catch (e) {
+        c.msg = e && e.message && !/Failed to fetch|NetworkError|Load failed/i.test(e.message) ? e.message : '沒有連上網路，請連上網路後再試一次。';
+    }
+    c.busy = false;
+    if (ui.sheet && ui.sheet.type === 'cloudPick') renderSheet();
+};
+ACT['cloud-copy-link'] = async () => {
+    const ta = $('#viewLinkOut');
+    let ok = false;
+    try { await navigator.clipboard.writeText(viewLink()); ok = true; } catch (e) { try { ta.focus(); ta.select(); ok = document.execCommand('copy'); } catch (e2) { ok = false; } }
+    gtoast(ok ? '已複製連結' : '複製失敗，請長按文字框手動全選複製');
+};
+ACT['cloud-link'] = async () => {
+    let ok = false;
+    try { await navigator.clipboard.writeText(viewLink()); ok = true; } catch (e) { ok = false; }
+    if (ok) gtoast('已複製觀看連結'); else showMessage('觀看連結', viewLink());
+};
+function cloudCardHtml() {
+    const meta = lsJson(CLOUD_KEYS.meta, null);
+    return `<div class="card"><h2>雲端分享</h2>
+        <div class="note">把選的比賽加密上傳，隊友用連結加觀看密碼就能看最新數據（唯讀）。${meta ? `上次上傳：${esc(fmtDateTime(meta.at))}（${meta.n} 場）。` : '還沒有上傳過。'}</div>
+        <button class="btn-solid brand" data-action="cloud-open">上傳到雲端</button>
+        <div class="row"><button class="btn-solid ghost" style="flex:1" data-action="cloud-link">複製觀看連結</button><button class="btn-solid ghost" style="flex:1" data-action="cloud-settings">雲端設定</button></div></div>`;
+}
+
+/* --- 觀看端（網址加 #view）：唯讀，資料只放記憶體，不碰這支手機上的本機資料庫 --- */
+let VIEW_MODE = false;
+function viewModeFromUrl() {
+    const h = location.hash;
+    if (h === '#view') lsSet(CLOUD_KEYS.mode, 'view');
+    else if (h === '#edit') lsRemove(CLOUD_KEYS.mode);
+    return lsGet(CLOUD_KEYS.mode) === 'view';
+}
+ui.gate = { state: 'loading', msg: '' };
+function gateHtml() {
+    const g = ui.gate;
+    let body;
+    if (g.state === 'loading') body = '<div class="note">讀取最新資料中…</div>';
+    else if (g.state === 'password') body = `<p class="note">這份數據需要觀看密碼。密碼請向隊伍管理者詢問。</p>
+        <div class="field"><input class="input-text" type="password" data-field="vwPw" value="${esc(F('vwPw', ''))}" autocomplete="off" data-enter="view-unlock" aria-label="觀看密碼"></div>
+        ${g.msg ? `<div class="banner-warn">${esc(g.msg)}</div>` : ''}<button class="btn-solid brand block" data-action="view-unlock">看數據</button>`;
+    else body = `<div class="banner-warn">${esc(g.msg)}</div><button class="btn-solid brand block" data-action="view-refresh">再試一次</button>`;
+    return `<div class="page-inner col gutter"><div class="page-title"><h1>${esc(DB.settings.teamTitle)}</h1><p>數據（唯讀）</p></div><div class="card">${body}</div>
+        <button class="btn-solid ghost block" data-action="view-exit">我要用自己的紀錄（離開唯讀模式）</button></div>`;
+}
+TAB_VIEWS.gate = gateHtml;
+let viewEnv = null;
+async function viewStart(forceFetch) {
+    ui.tab = 'gate'; ui.gate = { state: 'loading', msg: '' }; render();
+    if (!cloudSupported()) { ui.gate = { state: 'error', msg: '這個瀏覽器不能解密。請改用 https 網址、較新的 Safari 或 Chrome。' }; render(); return; }
+    try {
+        if (!viewEnv || forceFetch) viewEnv = JSON.parse(await cloudGet());
+    } catch (e) {
+        ui.gate = { state: 'error', msg: e && e.message === 'not-found' ? '還沒有人上傳過資料。' : '讀不到雲端資料，請確認網路後再試一次。' };
+        render(); return;
+    }
+    const saved = lsGet(CLOUD_KEYS.viewPw);
+    if (saved) { const ok = await viewDecrypt(saved, true); if (ok) return; }
+    ui.gate = { state: 'password', msg: '' }; render();
+}
+async function viewDecrypt(pw, silent) {
+    try {
+        const r = migrate(JSON.parse(await decryptEnvelope(viewEnv, pw)));
+        if (!r.ok) throw new Error('bad-envelope');
+        DB = r.db; lsSet(CLOUD_KEYS.viewPw, pw);
+        ui.tab = 'stats'; ui.stats.f.teamName = ''; ui.viewStack = ['tabs'];
+        render();
+        return true;
+    } catch (e) {
+        if (silent) return false;
+        ui.gate = { state: 'password', msg: e && e.message === 'bad-password' ? '密碼不對。' : e && e.message === 'no-decompress' ? '這個瀏覽器太舊，不能解開資料，請更新 Safari 或改用 Chrome。' : '資料格式不認得，請請管理者重新上傳。' };
+        render();
+        return false;
+    }
+}
+ACT['view-unlock'] = () => { const pw = String(F('vwPw', '')); if (pw) viewDecrypt(pw, false); };
+ACT['view-refresh'] = () => { viewStart(true); };
+ACT['view-exit'] = () => { lsRemove(CLOUD_KEYS.mode); location.hash = '#edit'; location.reload(); };
+function viewBannerHtml() {
+    return `<div class="view-banner"><span>唯讀・資料更新於 ${esc(viewEnv && viewEnv.at ? fmtDateTime(viewEnv.at) : '—')}</span><span><button class="btn-solid ghost small" data-action="view-refresh">重新整理</button> <button class="btn-solid ghost small" data-action="view-exit">離開</button></span></div>`;
+}
+
 /* ===== 啟動後：有進行中的比賽就提示繼續 ===== */
 function afterBoot() {
     const live = liveMatches().filter(m => Date.now() - m.updatedAt < 12 * 3600 * 1000);
@@ -4615,6 +4949,13 @@ SHEETS.resumePrompt = d => {
 
 /* ===== BOOT：載入資料庫 → migrate → 繪製 ===== */
 (async function boot() {
+    if (viewModeFromUrl()) {      // 唯讀觀看：不讀、不寫這支手機上的本機資料庫
+        VIEW_MODE = true;
+        document.body.classList.add('viewmode');
+        try { if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !inFrame) navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {}
+        viewStart(false);
+        return;
+    }
     let loaded = null;
     try { loaded = await Storage.load(); } catch (e) { loaded = null; }
     if (loaded) {
