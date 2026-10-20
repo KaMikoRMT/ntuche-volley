@@ -33,3 +33,7 @@ node tests/selftest.mjs
 ```
 
 把 `app/index.html` 裡 `/* @core-begin */` 到 `/* @core-end */` 的純邏輯抽出來在 Node 裡執行，涵蓋資料模型、事件流推導、統計公式、匯出入合併、隊伍管理、覆盤、跨場分析。
+
+## 雲端分享（給隊友看）
+
+上傳者把選的比賽加密上傳，隊友用 `…/ntuche-volley/#view` 加觀看密碼就能唯讀查看最新數據。設定步驟見 [docs/CLOUD.md](docs/CLOUD.md)。
