@@ -476,6 +476,20 @@
     .viz-bar > i.mid { background: var(--viz-mid); }
     .viz-bar > i.bad { background: var(--viz-bad); color: var(--viz-bad-ink); }
     .viz-bar > i.err { background: var(--viz-err); }
+    .viz-bar > i.na { background: var(--chip-line); }
+    .pq-row { display: flex; flex-direction: column; gap: 4px; padding-block: 6px; }
+    .pq-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13px; }
+    .pq-top b { font-size: 14px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pq-top span { color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .pq-row .viz-bar { height: 14px; border-radius: 7px; }
+    .pq-team { border-top: 1px solid var(--line); margin-top: 4px; }
+    .pq-team .pq-top b { font-weight: 800; }
+    .pq-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); font-weight: 700; }
+    .pq-legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .pq-legend b { color: var(--ink); }
+    .pq-legend .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+    .pq-legend .sw.good { background: var(--viz-good); } .pq-legend .sw.mid { background: var(--viz-mid); } .pq-legend .sw.bad { background: var(--viz-bad); }
+    .pq-legend .sw.err { background: var(--viz-err); } .pq-legend .sw.na { background: var(--chip-line); }
     .viz-bar.tall { height: 26px; border-radius: 8px; }
     .viz-bar.tall > i { display: flex; align-items: center; justify-content: center; color: var(--on-btn); font-size: 12px; font-weight: 800; font-variant-numeric: tabular-nums; }
     .viz-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -1276,6 +1290,8 @@ const STAT_DEFS = [
     { key: 'net', label: '個人得分／失分／淨值', formula: '歸給此人的得分數、失分數、相減', needs: '第 1 層' },
     { key: 'maxRun', label: '最大連續得分／失分', formula: '由每球的得分方序列算（不跨局）', needs: '第 1 層' }
 ];
+const DIG_TYPE_KEYS = ['ok', 'no', 'good', 'run', 'bad'];
+function blankDigType() { return { ok: 0, no: 0, good: 0, run: 0, bad: 0 }; }
 function blankStat(pid) {
     return {
         pid, pts: 0, loss: 0, net: 0,
@@ -1284,7 +1300,7 @@ function blankStat(pid) {
         block: { pt: 0, err: 0 },
         receive: { good: 0, run: 0, bad: 0, err: 0, total: 0, rate: null },
         fix: { good: 0, bad: 0, total: 0, rate: null },   // 修正球（第二球救球）：有沒有修正到位；不算起球、也不算配球
-        dig: { ok: 0, no: 0, good: 0, run: 0, bad: 0, total: 0, rate: null, goodRate: null, types: {} },   // types: { spike: { ok, no }, … }；沒分類的歸在 ''
+        dig: { ok: 0, no: 0, good: 0, run: 0, bad: 0, total: 0, rate: null, goodRate: null, types: {} },   // types: { spike: { ok, no, good, run, bad }, … }：每種防守的起球與品質；沒分類的歸在 ''
         setQ: { good: 0, bad: 0, err: 0, total: 0, rate: null },   // 這位球員「舉出去」的球的品質（舉球員；隊伍欄位是全隊）
         setTo: 0
     };
@@ -1324,7 +1340,7 @@ function addStat(a, b) {
     if (b.serve.total !== null) a.serve.total = (a.serve.total || 0) + b.serve.total;
     ['good', 'run', 'bad', 'err'].forEach(k => { a.receive[k] += b.receive[k]; });
     ['ok', 'no', 'good', 'run', 'bad'].forEach(k => { a.dig[k] += b.dig[k]; });
-    Object.keys(b.dig.types || {}).forEach(t => { const x = a.dig.types[t] || (a.dig.types[t] = { ok: 0, no: 0 }); x.ok += b.dig.types[t].ok; x.no += b.dig.types[t].no; });
+    Object.keys(b.dig.types || {}).forEach(t => { const x = a.dig.types[t] || (a.dig.types[t] = blankDigType()); DIG_TYPE_KEYS.forEach(k => { x[k] += b.dig.types[t][k] || 0; }); });
     ['good', 'bad'].forEach(k => { a.fix[k] += b.fix ? b.fix[k] : 0; });
     ['good', 'bad', 'err'].forEach(k => { a.setQ[k] += b.setQ ? b.setQ[k] : 0; });
     a.setTo += b.setTo || 0;
@@ -1451,7 +1467,7 @@ function computeMatchStats(match, db, opts) {
                     const k = d.ok ? 'ok' : 'no', q = d.ok ? normQuality(d.q) : '';
                     P(d.p).dig[k]++; team.dig[k]++;
                     const ty = DIG_TYPES.some(t => t[0] === d.type) ? d.type : '';
-                    [P(d.p).dig, team.dig].forEach(x => { (x.types[ty] || (x.types[ty] = { ok: 0, no: 0 }))[k]++; });
+                    [P(d.p).dig, team.dig].forEach(x => { const tt = x.types[ty] || (x.types[ty] = blankDigType()); tt[k]++; if (q) tt[q]++; });
                     if (q) { P(d.p).dig[q]++; team.dig[q]++; }
                 });
                 // 配球：這一球舉給誰（被配球的人），位置用「那一局」確認的位置
@@ -2561,10 +2577,12 @@ function runSelfTests() {
         const ev = m.sets[0].log.filter(e => e.out !== 'cont');
         reviewAddDig(m, ev[0].id, 'D', true, 'good', 'spike'); reviewAddDig(m, ev[0].id, 'D', false, '', 'spike'); reviewAddDig(m, ev[0].id, 'D', true, 'run', 'free'); reviewAddDig(m, ev[0].id, 'D', true, 'bad', 'zzz');
         const s = computeMatchStats(m, null);
-        eq(s.team.dig.types, { spike: { ok: 1, no: 1 }, free: { ok: 1, no: 0 }, '': { ok: 1, no: 0 } });
+        eq(s.team.dig.types, { spike: { ok: 1, no: 1, good: 1, run: 0, bad: 0 }, free: { ok: 1, no: 0, good: 0, run: 1, bad: 0 }, '': { ok: 1, no: 0, good: 0, run: 0, bad: 1 } }, '每種類型的起球與品質');
+        eq(s.players.D.dig.types.spike, { ok: 1, no: 1, good: 1, run: 0, bad: 0 }, '個人也有');
         eq(m.review[ev[0].id].digs[0].type, 'spike'); eq('type' in m.review[ev[0].id].digs[3], false, '不認得的類型不存');
         const db = newDb(); db.matches[m.id] = m;
-        eq(computeAggregate(db, [m, m]).team.dig.types.spike, { ok: 2, no: 2 }, '跨場累計');
+        eq(computeAggregate(db, [m, m]).team.dig.types.spike, { ok: 2, no: 2, good: 2, run: 0, bad: 0 }, '跨場累計');
+        eq(computeAggregate(db, [m, m]).players.find(e => e.pid === 'D').stat.dig.types.free.run, 2, '個人跨場累計');
     });
     T('修正球：只記到位／沒到位，不算起球、起球品質、配球；失敗的修正球不影響「防守沒起」的自動補算', () => {
         const m = fixtureMatch();
@@ -2575,7 +2593,7 @@ function runSelfTests() {
         eq([d.fix.good, d.fix.bad, d.fix.total, d.fix.rate], [1, 1, 2, 0.5]);
         eq([s.team.fix.good, s.team.fix.bad], [2, 1], '全隊');
         eq([d.dig.ok, d.dig.no, d.dig.good], [1, 0, 1], '修正球不進起球');
-        eq(s.team.dig.types, { spike: { ok: 1, no: 0 } }, '也不進類型');
+        eq(s.team.dig.types, { spike: { ok: 1, no: 0, good: 1, run: 0, bad: 0 } }, '也不進類型');
         eq([s.dist.total, s.team.setTo], [0, 0], '不算配球');
         eq(m.review[ev[0].id].digs[0], { p: 'D', ok: true, q: '', type: 'fix' });
         const db = newDb(); db.matches[m.id] = m;
@@ -4331,6 +4349,7 @@ function viewCross() {
         ${agg.noteHighMatches ? `<div class="banner-warn">其中 ${agg.noteHighMatches} 場沒有記被守起，攻擊成功率會偏高。</div>` : ''}</div>`;
     h += compareCardHtml(list);
     h += vizCardHtml(t, '累計');
+    h += pdefCardHtml(agg.players.map(e => [e.pid, e.stat]), t, rvNameAny, '累計');
     h += distCardHtml(agg.dist, rvNameAny, '累計');
     // 團隊趨勢
     const labels = agg.perMatch.map(r => mmdd(r.date)), tip = tipOf('trend');
@@ -4382,6 +4401,7 @@ function renderCareer() {
         <div class="kpi"><span>出賽場數</span><b>${ps.games}</b></div><div class="kpi"><span>總得分</span><b>${t.pts}</b><small>平均每場 ${avg.toFixed(1)}</small></div>
         <div class="kpi"><span>攻擊成功率</span><b>${fmtPct(a.rate)}</b><small>${a.pt} 得分／${a.total} 次</small></div><div class="kpi"><span>失分</span><b>${t.loss}</b><small>淨值 ${t.net > 0 ? '+' : ''}${t.net}</small></div></div>
         ${a.total && !a.dug && !ps.rows.some(r => r.stat.attack.dug) ? '<div class="banner-warn">沒有任何被守起紀錄，攻擊成功率會偏高。</div>' : ''}</div>`;
+    h += careerDefHtml(t);
     const labels = ps.rows.map(r => mmdd(r.date)), vals = ps.rows.map(r => r.stat.pts), tip = tipOf('career');
     h += `<div class="card"><h2>每場總得分 <button class="btn-solid ghost small" data-action="chart-table">${ui.stats.table ? '看圖' : '看表格'}</button></h2>`;
     if (ui.stats.table) h += `<div class="rtable-wrap"><table class="rtable"><thead><tr><th>日期</th><th>對手</th><th>總得分</th></tr></thead><tbody>${ps.rows.map(r => `<tr><td>${esc(mmdd(r.date))}</td><td>${esc(r.opponent)}</td><td>${r.stat.pts}</td></tr>`).join('')}</tbody></table></div>`;
@@ -4410,6 +4430,64 @@ function barGroup(title, data, color, hi) {
 }
 function metricRow(label, parts) {
     return `<div class="metric"><b>${label}</b><div class="mv">${parts.map(p => `<span><em>${p[0]}</em>${p[1]}</span>`).join('')}</div></div>`;
+}
+/* ===== 個人接發與防守：每個人接發的品質、每種防守的起球品質 ===== */
+ui.pdef = { k: 'recv' };
+const pdefPct = (n, d) => d ? Math.round(n / d * 100) + '%' : '—';
+// 一列：名稱＋數字在上、分段條在下（手機窄也放得下）
+function pqRow(label, segs, text) {
+    const tot = segs.reduce((a, x) => a + x.n, 0);
+    const aria = `${label}：${segs.map(x => `${x.label} ${x.n}`).join('、')}`;
+    return `<div class="pq-row" role="img" aria-label="${esc(aria)}"><div class="pq-top"><b>${esc(label)}</b><span>${esc(text)}</span></div>
+        <div class="viz-bar">${tot ? segs.filter(x => x.n).map(x => `<i class="${x.cls}" style="flex:${x.n} 1 0"></i>`).join('') : ''}</div></div>`;
+}
+function recvSegs(r) { return [{ cls: 'good', n: r.good, label: '到位' }, { cls: 'mid', n: r.run, label: '需要跑動' }, { cls: 'bad', n: r.bad, label: '壞球' }, { cls: 'err', n: r.err, label: '失誤' }]; }
+function digSegs(d) {
+    const na = Math.max(0, d.ok - d.good - d.run - d.bad);
+    return [{ cls: 'good', n: d.good, label: '到位' }, { cls: 'mid', n: d.run, label: '需要跑動' }, { cls: 'bad', n: d.bad, label: '壞球' }, { cls: 'na', n: na, label: '起球沒評品質' }, { cls: 'err', n: d.no, label: '沒起' }];
+}
+function fixSegs(f) { return [{ cls: 'good', n: f.good, label: '修正到位' }, { cls: 'err', n: f.bad, label: '沒到位' }]; }
+const recvText = r => `${r.total} 次・到位 ${pdefPct(r.good, r.total)}`;
+const digText = d => { const rated = d.good + d.run + d.bad; return `${d.ok + d.no} 次・起球 ${pdefPct(d.ok, d.ok + d.no)}・到位 ${pdefPct(d.good, rated)}`; };
+const fixText = f => `${f.good + f.bad} 次・修正到位 ${pdefPct(f.good, f.good + f.bad)}`;
+function digOf(stat, k) { return k === 'all' ? stat.dig : (stat.dig.types && stat.dig.types[k === 'none' ? '' : k]) || blankDigType(); }
+function pdefLegend(k, prefix) {
+    const items = k === 'recv' ? recvSegs({ good: 0, run: 0, bad: 0, err: 0 }) : k === 'fix' ? fixSegs({ good: 0, bad: 0 }) : digSegs(blankDigType());
+    return `<div class="pq-legend">${prefix ? `<span><b>${esc(prefix)}</b></span>` : ''}${items.map(x => `<span><i class="sw ${x.cls}"></i>${esc(x.label)}</span>`).join('')}</div>`;
+}
+// rows: [[pid, stat]]；team：全隊的 stat
+function pdefCardHtml(rows, team, nameOf, scope) {
+    const k = ui.pdef.k, td = team.dig.types || {};
+    const opts = [{ value: 'recv', label: '接發' }, { value: 'all', label: '防守全部' }]
+        .concat(DIG_TYPES.filter(t => td[t[0]] && td[t[0]].ok + td[t[0]].no).map(t => ({ value: t[0], label: t[1] })))
+        .concat(td[''] && td[''].ok + td[''].no ? [{ value: 'none', label: '未分類' }] : [])
+        .concat(team.fix && team.fix.good + team.fix.bad ? [{ value: 'fix', label: '修正球' }] : []);
+    const cur = opts.some(o => o.value === k) ? k : 'recv';
+    const pick = st => cur === 'recv' ? { n: st.receive.total, segs: recvSegs(st.receive), text: recvText(st.receive) }
+        : cur === 'fix' ? { n: st.fix.good + st.fix.bad, segs: fixSegs(st.fix), text: fixText(st.fix) }
+        : (d => ({ n: d.ok + d.no, segs: digSegs(d), text: digText(d) }))(digOf(st, cur));
+    const list = rows.map(([pid, st]) => ({ pid, v: pick(st) })).filter(x => x.v.n).sort((a, b) => b.v.n - a.v.n);
+    const tv = pick(team);
+    const title = cur === 'recv' ? '接發' : cur === 'fix' ? '修正球' : cur === 'all' ? '防守（全部類型）' : cur === 'none' ? '防守（未分類）' : `防守：${(DIG_TYPES.find(t => t[0] === cur) || [0, ''])[1]}`;
+    return `<div class="card rp-card"><h2>${scope}：接發與防守（個人）</h2>
+        <div class="chips">${chipsHtml(opts, [cur], 'pdef-k')}</div>
+        ${pdefLegend(cur)}
+        ${list.length ? list.map(x => pqRow(nameOf(x.pid), x.v.segs, x.v.text)).join('') + `<div class="pq-team">${pqRow('全隊', tv.segs, tv.text)}</div>` : `<div class="empty">${title}還沒有資料。<br>到「逐球覆盤」記接發與防守，這裡就會出現。</div>`}
+        <div class="note">只算已覆盤的球。到位率：接發 = 到位 ÷ 全部；防守 = 到位 ÷ 有評品質的起球。依次數多到少排列。</div></div>`;
+}
+ACT['pdef-k'] = el => { ui.pdef.k = el.dataset.v; render(); };
+// 球員生涯：這一個人的接發與每種防守
+function careerDefHtml(st) {
+    const rows = [];
+    if (st.receive.total) rows.push(pqRow('接發', recvSegs(st.receive), recvText(st.receive)));
+    const types = st.dig.types || {};
+    if (st.dig.ok + st.dig.no) rows.push(pqRow('防守（全部）', digSegs(st.dig), digText(st.dig)));
+    DIG_TYPES.concat([['', '未分類']]).forEach(t => { const d = types[t[0]]; if (d && d.ok + d.no) rows.push(pqRow(`　${t[1]}`, digSegs(d), digText(d))); });
+    if (st.fix && st.fix.good + st.fix.bad) rows.push(pqRow('修正球', fixSegs(st.fix), fixText(st.fix)));
+    if (!rows.length) return '';
+    const hasDig = st.dig.ok + st.dig.no > 0, hasFix = st.fix && st.fix.good + st.fix.bad > 0;
+    const legends = (st.receive.total ? pdefLegend('recv', '接發') : '') + (hasDig ? pdefLegend('all', '防守') : '') + (hasFix ? pdefLegend('fix', '修正球') : '');
+    return `<div class="card"><h2>接發與防守</h2>${legends}${rows.join('')}<div class="note">只算已覆盤的球；不管當時在哪一隊都合併計算。</div></div>`;
 }
 /* ===== 視覺化：對比條（左成功、右失敗）、配球百分比 ===== */
 const POS_VAR = { OH: 'var(--pos-oh)', MB: 'var(--pos-mb)', OPP: 'var(--pos-opp)', S: 'var(--pos-s)', '': 'var(--pos-none)' };
@@ -4494,7 +4572,7 @@ function reportHtml(m) {
             <div class="rp-top"><span class="rp-result">${sum.us} : ${sum.them}</span><span class="note">${esc(FORMATS[m.format.bestOf === 5 ? 'bo5' : 'bo3'].label)}</span></div>
             <div class="rp-sets">${started.map(x => `<span class="tagx">第 ${x.no} 局 ${x.score.us}:${x.score.them}</span>`).join('') || '<span class="note">還沒有紀錄</span>'}</div></div>
         <div class="rp-nav" data-html2canvas-ignore><div class="chips">${chipsHtml([{ value: '', label: '全場' }].concat(started.map(x => ({ value: String(x.no - 1), label: `第 ${x.no} 局` }))), [idx === null ? '' : String(idx)], 'rp-set')}</div>
-            ${ms.rallies ? `<div class="rp-jump">${[['src', '得失分'], ['viz', '攻防'], ['dist', '配球'], ['table', '個人表']].map(x => `<button type="button" data-action="rp-jump" data-k="${x[0]}">${x[1]}</button>`).join('')}<button type="button" class="img" data-action="rp-image">存成圖片</button></div>` : ''}</div>`;
+            ${ms.rallies ? `<div class="rp-jump">${[['viz', '攻防'], ['pdef', '接發防守'], ['dist', '配球'], ['table', '個人表']].map(x => `<button type="button" data-action="rp-jump" data-k="${x[0]}">${x[1]}</button>`).join('')}<button type="button" class="img" data-action="rp-image">存成圖片</button></div>` : ''}</div>`;
     if (!ms.rallies) return h + '<div class="empty">這個範圍還沒有紀錄。</div></div>';
     // 比分軌跡
     h += `<div class="card rp-card" data-html2canvas-ignore><h2>比分軌跡</h2>${sum.sets.filter(x => x.started && (idx === null || x.no - 1 === idx)).map(x => `<div><div class="sub-label">第 ${x.no} 局　${x.score.us}:${x.score.them}</div><div class="tl-scroll">${timelineTable(setTimeline(x.state), 0, 'tl-live')}</div></div>`).join('')}</div>`;
@@ -4517,6 +4595,7 @@ function reportHtml(m) {
         ${TALLY_KEYS.some(k => ms.tally[k]) ? metricRow('舊配球', TALLY_KEYS.map(k => [k, ms.tally[k]])) : ''}
         ${ms.tracked ? '' : '<div class="note">這個範圍沒有先發陣容，發球總數與發球成功率顯示「—」。</div>'}</div>`;
     h += `<div data-sec="viz">${vizCardHtml(t, scope)}</div>`;
+    h += `<div data-sec="pdef">${pdefCardHtml(reportPlayerIds(m, ms).filter(pid => ms.players[pid]).map(pid => [pid, ms.players[pid]]), t, pid => nameOfIn(m, DB, pid), scope)}</div>`;
     h += `<div data-sec="dist">${distCardHtml(ms.dist, pid => nameOfIn(m, DB, pid), scope)}</div>`;
     // 個人表
     const cols = STAT_COLUMNS.filter(c => c.t);
