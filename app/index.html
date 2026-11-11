@@ -311,6 +311,8 @@
     .le-slot.empty { border-style: dashed; color: var(--muted); font-weight: 500; }
     .le-slot.sel { border-color: var(--chip-on); box-shadow: inset 0 0 0 2px var(--chip-on); }
     .le-libero { grid-column: 1 / -1; }
+    .le-court.le-libs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .le-libs .le-slot small { font-size: 11px; }
     .le-libero .le-slot { min-height: 46px; flex-direction: row; gap: 8px; }
 
     /* ===== 紀錄表預覽 ===== */
@@ -782,39 +784,63 @@ function newPlayer(f) {
         createdAt: n, updatedAt: n
     };
 }
-function newLineup(slots, libero) {
+// libero = 接發自由（對方發球時上場）；libero2 = 接扣自由（我方發球時上場）。libero2 空著 = 單自由，兩個時候都是 libero
+function newLineup(slots, libero, libero2) {
     const s = {};
     for (let i = 1; i <= 6; i++) if (slots && slots[i]) s[i] = slots[i];
-    return { system: '5-1', slots: s, libero: libero || null };
+    return { system: '5-1', slots: s, libero: libero || null, libero2: libero2 || null };
 }
 function cloneLineup(l) {
     if (!l) return null;
-    return newLineup(l.slots, l.libero);
+    return newLineup(l.slots, l.libero, l.libero2);
 }
+const isLiberoSlot = slot => slot === 'L' || slot === 'L2';
+// 這一球場上的自由球員：我方發球用接扣自由（沒填就用接發自由），其他時候用接發自由
+function liberoFor(l, serving) {
+    if (!l) return null;
+    return (serving === 'us' ? (l.libero2 || l.libero) : (l.libero || l.libero2)) || null;
+}
+function liberosOf(l) { return l ? [l.libero, l.libero2].filter((x, i, a) => x && a.indexOf(x) === i) : []; }
 function lineupComplete(l) {
     if (!l) return false;
     for (let i = 1; i <= 6; i++) if (!l.slots[i]) return false;
     return true;
 }
-// 這個球員在陣容的哪一格：1～6、'L'（自由）或 null
+// 這個球員在陣容的哪一格：1～6、'L'（接發自由）、'L2'（接扣自由）或 null
 function lineupFind(l, pid) {
     for (let i = 1; i <= 6; i++) if (l.slots[i] === pid) return i;
-    return l.libero === pid ? 'L' : null;
+    return l.libero === pid ? 'L' : l.libero2 === pid ? 'L2' : null;
 }
-// 把球員放進選取的格子（1～6 或 'L'）；他已經在別格就搬過來，原本那格的人換到他原來的位置
+const libKey = slot => (slot === 'L' ? 'libero' : 'libero2');
+// 把球員放進選取的格子（1～6、'L'、'L2'）；他已經在別格就搬過來，原本那格的人換到他原來的位置。
+// 例外：同一個人可以同時是接發自由與接扣自由（單自由）
 function lineupAssign(l, slot, pid) {
-    const from = lineupFind(l, pid);
-    const occupant = slot === 'L' ? l.libero : l.slots[slot];
-    if (slot === 'L') l.libero = pid; else l.slots[slot] = pid;
+    if (isLiberoSlot(slot)) {
+        const occupant = l[libKey(slot)];
+        let court = null;
+        for (let i = 1; i <= 6; i++) if (l.slots[i] === pid) court = i;
+        l[libKey(slot)] = pid;
+        if (court !== null) {
+            if (occupant && occupant !== pid && liberosOf(l).indexOf(occupant) === -1) l.slots[court] = occupant;
+            else delete l.slots[court];
+        }
+        return l;
+    }
+    const occupant = l.slots[slot];
+    let from = null;
+    for (let i = 1; i <= 6; i++) if (l.slots[i] === pid) from = i;
+    l.slots[slot] = pid;
     if (from !== null && from !== slot) {
-        if (from === 'L') l.libero = occupant || null;
-        else if (occupant) l.slots[from] = occupant;
+        if (occupant) l.slots[from] = occupant;
         else delete l.slots[from];
+    } else if (from === null) {
+        // 從自由球員搬到 1～6：原本那格的人接手他的自由位置（兩格都是他就兩格都換）
+        ['libero', 'libero2'].forEach(k => { if (l[k] === pid) l[k] = occupant || null; });
     }
     return l;
 }
 function lineupClear(l, slot) {
-    if (slot === 'L') l.libero = null; else delete l.slots[slot];
+    if (isLiberoSlot(slot)) l[libKey(slot)] = null; else delete l.slots[slot];
     return l;
 }
 // 從 from 的下一格開始找第一個空的號位（1～6）；都滿了回傳 null
@@ -976,8 +1002,8 @@ function cleanLineup(l, memberIds) {
     const ok = pid => pid && memberIds.indexOf(pid) !== -1;
     const slots = {};
     for (let i = 1; i <= 6; i++) if (ok(l.slots[i])) slots[i] = l.slots[i];
-    const out = newLineup(slots, ok(l.libero) ? l.libero : null);
-    return Object.keys(out.slots).length || out.libero ? out : null;
+    const out = newLineup(slots, ok(l.libero) ? l.libero : null, ok(l.libero2) ? l.libero2 : null);
+    return Object.keys(out.slots).length || out.libero || out.libero2 ? out : null;
 }
 // 把球員放進某隊（同一賽季只會在一隊：從另一隊拿掉）。球員 ID 不變，生涯數據自動跟著走。
 function moveMemberIn(db, pid, toTeamId) {
@@ -1104,7 +1130,7 @@ function rotateLineup(l, dir) {
         const from = dir >= 0 ? (i % 6) + 1 : ((i + 4) % 6) + 1;
         if (o[from]) s[i] = o[from];
     }
-    return newLineup(s, l.libero);
+    return newLineup(s, l.libero, l.libero2);
 }
 function replaySet(set, match) {
     const review = match && match.review ? match.review : null;
@@ -1114,7 +1140,7 @@ function replaySet(set, match) {
         firstServe: set.firstServe || null,
         serving: set.firstServe || null,
         tracked: !!(set.lineup && set.firstServe),
-        rotation: cloneLineup(set.lineup), onCourt: [], libero: null,
+        rotation: cloneLineup(set.lineup), onCourt: [], libero: null, liberos: [],
         subsUsed: 0, tally: { 欄中: 0, 背: 0, 大砲: 0 },
         openRally: [], lastEntry: null, server: null
     };
@@ -1144,7 +1170,7 @@ function replaySet(set, match) {
                 let done = false;
                 for (let n = 1; n <= 6; n++) if (st.rotation.slots[n] === e.outP) { st.rotation.slots[n] = e.inP; done = true; break; }
                 if (done) st.subsUsed++;
-                else if (st.rotation.libero === e.outP) st.rotation.libero = e.inP;
+                else ['libero', 'libero2'].forEach(k => { if (st.rotation[k] === e.outP) st.rotation[k] = e.inP; });
             }
         } else if (e.k === 'rot') {
             if (st.rotation) st.rotation = rotateLineup(st.rotation, e.dir >= 0 ? 1 : -1);
@@ -1157,7 +1183,8 @@ function replaySet(set, match) {
     st.openRally = open;
     if (st.rotation) {
         for (let n = 1; n <= 6; n++) st.onCourt.push(st.rotation.slots[n] || null);
-        st.libero = st.rotation.libero || null;
+        st.libero = liberoFor(st.rotation, st.serving);
+        st.liberos = liberosOf(st.rotation);
         if (st.serving === 'us') st.server = st.rotation.slots[1] || null;
     }
     return st;
@@ -1240,7 +1267,7 @@ function popLastEntry(match, setIdx) {
 function matchParticipants(match) {
     const s = new Set();
     match.sets.forEach(set => {
-        if (set.lineup) { for (let i = 1; i <= 6; i++) if (set.lineup.slots[i]) s.add(set.lineup.slots[i]); if (set.lineup.libero) s.add(set.lineup.libero); }
+        if (set.lineup) { for (let i = 1; i <= 6; i++) if (set.lineup.slots[i]) s.add(set.lineup.slots[i]); liberosOf(set.lineup).forEach(x => s.add(x)); }
         set.log.forEach(e => { if (e.k === 'ev' && e.p) s.add(e.p); if (e.k === 'sub') { s.add(e.inP); s.add(e.outP); } });
     });
     return s;
@@ -2572,6 +2599,35 @@ function runSelfTests() {
         eq(plan.items.map(i => i.kind + ':' + i.action).sort(), ['players:add', 'seasons:add', 'teams:add'], '匯入空的資料庫＝全部新增');
         ok(plan.adoptSettings, '空的資料庫會採用隊名設定');
     });
+    T('雙自由：對方發球用接發自由、我方發球用接扣自由；單自由（同一人或接扣自由空著）照舊', () => {
+        const m = newMatch({ formatKey: 'bo3' });
+        m.roster = ['A', 'B', 'C', 'D', 'E', 'F', 'R', 'S'].map(id => ({ playerId: id, name: id, number: '', positions: [] }));
+        const set = m.sets[0];
+        set.lineup = newLineup({ 1: 'A', 2: 'B', 3: 'C', 4: 'D', 5: 'E', 6: 'F' }, 'R', 'S'); set.firstServe = 'them';
+        const L = () => replaySet(set, m);
+        eq([L().serving, L().libero, L().liberos], ['them', 'R', ['R', 'S']], '對方發球 → 接發自由');
+        set.log.push(E('attack', 'pt', 'A', 'spike'));
+        eq([L().serving, L().libero], ['us', 'S'], '得分換我方發球 → 接扣自由');
+        set.log.push(E('team', 'opp_pt'));
+        eq([L().serving, L().libero], ['them', 'R'], '失分換對方發球 → 接發自由');
+        const lu = lineupBefore(m, 0, set.log[1].id);
+        eq(lu.libero, 'S', '覆盤用「這一球之前」的自由：我方發球的那一球是接扣自由');
+        ok(matchParticipants(m).has('S'), '接扣自由算出賽');
+        set.log.push({ id: uid('e_'), k: 'sub', outP: 'S', inP: 'R', t: Date.now() });
+        eq(L().rotation.libero2, 'R', '自由球員換人');
+        const one = newLineup({ 1: 'A' }, 'R', null);
+        eq([liberoFor(one, 'us'), liberoFor(one, 'them')], ['R', 'R'], '接扣自由空著 = 單自由');
+        const same = newLineup({ 1: 'A' }, null, null);
+        lineupAssign(same, 'L', 'R'); lineupAssign(same, 'L2', 'R');
+        eq([same.libero, same.libero2, liberosOf(same)], ['R', 'R', ['R']], '同一人可以填兩格');
+        lineupAssign(same, 2, 'R');
+        eq([same.slots[2], same.libero, same.libero2], ['R', null, null], '自由球員搬到 2 號位，兩格自由一起清掉');
+        const mv = newLineup({ 1: 'A', 2: 'B' }, 'R', null);
+        lineupAssign(mv, 'L2', 'B');
+        eq([mv.slots[2], mv.libero2], [undefined, 'B'], '從 2 號位搬去接扣自由，2 號位空出來');
+        const old = { system: '5-1', slots: { 1: 'A' }, libero: 'R' };
+        eq([liberoFor(cloneLineup(old), 'us'), cloneLineup(old).libero2], ['R', null], '舊資料沒有 libero2');
+    });
     T('防守類型：接扣／接吊／Cover／接嗆司各自統計起球與沒起，沒分類的歸在空字串', () => {
         const m = fixtureMatch();
         const ev = m.sets[0].log.filter(e => e.out !== 'cont');
@@ -3240,7 +3296,7 @@ function leInit(lineup, candidates) {
 }
 function lePlayer(pid) { return DB.players[pid] || null; }
 function leSlotHtml(le, slot, label) {
-    const pid = slot === 'L' ? le.lineup.libero : le.lineup.slots[slot];
+    const pid = isLiberoSlot(slot) ? le.lineup[libKey(slot)] : le.lineup.slots[slot];
     const p = pid ? lePlayer(pid) : null;
     return `<button type="button" class="le-slot${p ? '' : ' empty'}${le.sel === slot ? ' sel' : ''}" data-action="le-slot" data-slot="${slot}"><small>${label}</small>${p ? `${esc(p.name)}` : '選擇'}</button>`;
 }
@@ -3251,23 +3307,27 @@ function lineupEditorHtml() {
         const p = lePlayer(pid);
         if (!p) return '';
         const at = lineupFind(le.lineup, pid);
-        return `<button type="button" class="chip${at !== null ? ' on' : ''}" data-action="le-pick" data-id="${esc(pid)}">${esc(p.name)}${at !== null ? `<small>${at === 'L' ? '自由' : at + '號'}</small>` : ''}</button>`;
+        const both = le.lineup.libero === pid && le.lineup.libero2 === pid;
+        const tag = at === null ? '' : both ? '自由' : at === 'L' ? '接發自由' : at === 'L2' ? '接扣自由' : at + '號';
+        return `<button type="button" class="chip${at !== null ? ' on' : ''}" data-action="le-pick" data-id="${esc(pid)}">${esc(p.name)}${tag ? `<small>${tag}</small>` : ''}</button>`;
     }).join('');
-    const selPid = le.sel === 'L' ? le.lineup.libero : le.lineup.slots[le.sel];
+    const selPid = isLiberoSlot(le.sel) ? le.lineup[libKey(le.sel)] : le.lineup.slots[le.sel];
     return `<div class="sub-label">前排</div>${row([4, 3, 2])}
         <div class="sub-label">後排</div>${row([5, 6, 1])}
-        <div class="sub-label">自由球員（不算在 1～6 號位，不會發球）</div><div class="le-court"><div class="le-libero">${leSlotHtml(le, 'L', '自由')}</div></div>
+        <div class="sub-label">自由球員（不算在 1～6 號位，不會發球）</div><div class="le-court le-libs">${leSlotHtml(le, 'L', '接發自由（對方發球）')}${leSlotHtml(le, 'L2', '接扣自由（我方發球）')}</div>
+        <div class="note">單自由：兩格填同一個人，或接扣自由留空。</div>
         <div class="sub-label">選好一格，再點下面的球員放進去${selPid ? '' : ''}</div>
         <div class="chips">${chips || '<span class="note">沒有可以選的球員。</span>'}</div>
         ${selPid ? '<button type="button" class="btn-solid ghost small" data-action="le-clear">清除這一格</button>' : ''}`;
 }
-ACT['le-slot'] = el => { ui.le.sel = el.dataset.slot === 'L' ? 'L' : Number(el.dataset.slot); render(); };
+ACT['le-slot'] = el => { ui.le.sel = isLiberoSlot(el.dataset.slot) ? el.dataset.slot : Number(el.dataset.slot); render(); };
 ACT['le-pick'] = el => {
     const le = ui.le;
     lineupAssign(le.lineup, le.sel, el.dataset.id);
-    const nxt = nextEmptySlot(le.lineup, le.sel === 'L' ? 6 : le.sel);
+    const nxt = nextEmptySlot(le.lineup, isLiberoSlot(le.sel) ? 6 : le.sel);
     if (nxt) le.sel = nxt;
     else if (!le.lineup.libero) le.sel = 'L';
+    else if (!le.lineup.libero2 && le.sel === 'L') le.sel = 'L2';
     render();
 };
 ACT['le-clear'] = () => { lineupClear(ui.le.lineup, ui.le.sel); render(); };
@@ -3339,7 +3399,7 @@ function teamColHtml(team, teams) {
         ${others.slice(0, 1).map(o => `<button data-action="move-member" data-id="${esc(p.id)}" data-to="${esc(o.id)}" aria-label="移到${esc(o.name)}">→${esc(o.name.replace('隊', ''))}</button>`).join('')}
         <button class="x" data-action="remove-member" data-id="${esc(p.id)}" data-team="${esc(team.id)}" aria-label="移出${esc(team.name)}">✕</button></div>`).join('');
     const lu = team.defaultLineup;
-    const luText = lu ? `${Object.keys(lu.slots).length}/6${lu.libero ? ' ＋自由' : ''}` : '未設定';
+    const luText = lu ? `${Object.keys(lu.slots).length}/6${liberosOf(lu).length > 1 ? ' ＋雙自由' : liberosOf(lu).length ? ' ＋自由' : ''}` : '未設定';
     return `<div class="teamcol"><h3>${esc(team.name)} <small>${members.length} 人</small></h3>
         ${rows || '<div class="note">還沒有成員</div>'}
         <button class="btn-solid ghost small block" data-action="add-member-open" data-team="${esc(team.id)}">＋ 加入球員</button>
@@ -3428,7 +3488,7 @@ SHEETS.teamLineup = d => {
 };
 ACT['lineup-team-save'] = () => {
     const d = ui.sheet, l = ui.le.lineup;
-    const empty = !Object.keys(l.slots).length && !l.libero;
+    const empty = !Object.keys(l.slots).length && !l.libero && !l.libero2;
     commit(db => { const t = db.teams[d.teamId]; t.defaultLineup = empty ? null : cloneLineup(l); touch(t); });
     closeSheet(); gtoast('已儲存預設陣容');
 };
@@ -3762,7 +3822,7 @@ function renderLive() {
         const c = st.onCourt;
         const row = (label, slots) => `<div class="crow"><span class="crow-label">${label}</span>${slots.map(s => c[s - 1] ? playerBtn(m, c[s - 1], s, st) : '<button class="pbtn empty" disabled>空</button>').join('')}</div>`;
         pad += `<div class="court">${row('前排', [4, 3, 2])}${row('後排', [5, 6, 1])}
-            <div class="crow"><span class="crow-label">自由</span>${st.libero ? playerBtn(m, st.libero, 0, st) : '<button class="pbtn empty" disabled>無自由</button>'}<span></span>
+            <div class="crow"><span class="crow-label">${st.liberos.length > 1 ? (st.serving === 'us' ? '接扣自由' : '接發自由') : '自由'}</span>${st.libero ? playerBtn(m, st.libero, 0, st) : '<button class="pbtn empty" disabled>無自由</button>'}<span></span>
             <button class="pbtn sub tap" data-tap="sub-open">⇄ 換人<small>${st.subsUsed}/${MAX_SUBS}</small></button></div></div>`;
     } else {
         const n = m.roster.length, rows = n <= 5 ? 1 : n <= 10 ? 2 : n <= 15 ? 3 : 4;
@@ -3837,7 +3897,7 @@ ACT['pick'] = el => {
 SHEETS.play = d => {
     const m = liveMatch(), st = curState(m), pid = d.pid;
     const slot = st.onCourt.indexOf(pid) + 1;
-    const where = st.rotation ? (slot ? `（${slot} 號位）` : st.libero === pid ? '（自由）' : '') : '';
+    const where = st.rotation ? (slot ? `（${slot} 號位）` : st.liberos.indexOf(pid) !== -1 ? '（自由）' : '') : '';
     const vis = visibleActions({ playerId: pid, serving: st.serving, server: st.server, tracked: !!st.rotation, pos: posOf(m, pid) });
     const sec = (cls, label, list, wide) => `<div class="act-sec ${cls}"><b>${label}</b><div class="act-grid${wide ? ' wide' : ''}">${list.map(a => `<button class="abtn ${cls}${wide ? ' sm' : ''}" data-action="act" data-id="${a.id}" data-pid="${esc(pid)}">${esc(wide ? a.label + '（這球還沒結束）' : a.label)}</button>`).join('')}</div></div>`;
     return {
@@ -3852,7 +3912,7 @@ ACT['sub-open'] = () => openSheet('sub', { outP: null, inP: null });
 SHEETS.sub = d => {
     const m = liveMatch(), st = curState(m);
     const onCourt = st.onCourt.filter(Boolean);
-    const bench = m.roster.map(r => r.playerId).filter(id => onCourt.indexOf(id) === -1 && id !== st.libero);
+    const bench = m.roster.map(r => r.playerId).filter(id => onCourt.indexOf(id) === -1 && st.liberos.indexOf(id) === -1);
     const btn = (id, role) => { const r = m.roster.find(x => x.playerId === id); return `<button class="chip${d[role] === id ? ' on' : ''}" data-action="sub-pick" data-role="${role}" data-id="${esc(id)}"><small>${esc(r ? r.number || '–' : '–')}</small>${esc(nameOf(id))}</button>`; };
     return {
         title: '換人', sub: `本局換人 ${st.subsUsed}/${MAX_SUBS}`,
