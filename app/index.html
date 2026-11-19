@@ -1299,8 +1299,8 @@ function sheetCounts(match) {
 const STAT_DEFS = [
     { key: 'attackPt', label: '攻擊得分', formula: '攻擊得分 ＋ 吊球得分', needs: '第 1 層（賽中必記）' },
     { key: 'attackErr', label: '攻擊失誤', formula: '攻擊失分 ＋ 吊球失分', needs: '第 1 層' },
-    { key: 'attackTotal', label: '攻擊總數', formula: '得分 ＋ 失誤 ＋ 被守起（賽中「攻擊被守起」＋覆盤補記）', needs: '第 2 層' },
-    { key: 'attackRate', label: '攻擊成功率', formula: '得分 ÷ 攻擊總數；整場沒有任何被守起紀錄時會偏高', needs: '第 2 層' },
+    { key: 'attackTotal', label: '攻擊總數', formula: '得分 ＋ 失誤 ＋ 被守起（覆盤時記「攻擊被守起」；舊版賽中記的也算）', needs: '第 3 層（逐球覆盤）' },
+    { key: 'attackRate', label: '攻擊成功率', formula: '得分 ÷ 攻擊總數；整場沒有任何被守起紀錄時會偏高', needs: '第 3 層（逐球覆盤）' },
     { key: 'attackEff', label: '攻擊效率', formula: '（得分 − 失誤）÷ 攻擊總數', needs: '第 2 層' },
     { key: 'servePt', label: '發球得分', formula: '發球得分次數', needs: '第 1 層' },
     { key: 'serveErr', label: '發球失誤', formula: '發球失分次數', needs: '第 1 層' },
@@ -3902,7 +3902,8 @@ SHEETS.play = d => {
     const sec = (cls, label, list, wide) => `<div class="act-sec ${cls}"><b>${label}</b><div class="act-grid${wide ? ' wide' : ''}">${list.map(a => `<button class="abtn ${cls}${wide ? ' sm' : ''}" data-action="act" data-id="${a.id}" data-pid="${esc(pid)}">${esc(wide ? a.label + '（這球還沒結束）' : a.label)}</button>`).join('')}</div></div>`;
     return {
         title: `${nameOf(pid)}${where}`, sub: `我 ${st.score.us}:${st.score.them} 對`,
-        html: `${sec('score', '得分', vis.score)}${sec('loss', '失分', vis.loss)}${sec('cont', '繼續', vis.cont, true)}`
+        // 「攻擊被守起（本球繼續）」不在賽中記，改在覆盤時記；舊的賽中紀錄照常計算
+        html: `${sec('score', '得分', vis.score)}${sec('loss', '失分', vis.loss)}`
     };
 };
 ACT['act'] = el => { closeSheet(); recordAction(el.dataset.id, el.dataset.pid); };
@@ -4406,7 +4407,7 @@ function viewCross() {
         <div class="kpi"><span>局數</span><b>${agg.setsUs} : ${agg.setsThem}</b></div><div class="kpi"><span>總得分／總失分</span><b>${agg.ptsUs} : ${agg.ptsThem}</b></div></div>
         ${agg.record.open ? `<div class="note">另有 ${agg.record.open} 場沒有分出勝負（進行中或中途結束）。</div>` : ''}
         <div class="vs-line"><span class="note">攻擊成功率</span><b>${fmtPct(t.attack.rate)}</b><span class="note">效率 ${fmtPct(t.attack.eff)}</span></div>
-        ${agg.noteHighMatches ? `<div class="banner-warn">其中 ${agg.noteHighMatches} 場沒有記被守起，攻擊成功率會偏高。</div>` : ''}</div>`;
+        ${agg.noteHighMatches ? `<div class="banner-warn">其中 ${agg.noteHighMatches} 場沒有記被守起（覆盤時記），攻擊成功率會偏高。</div>` : ''}</div>`;
     h += compareCardHtml(list);
     h += vizCardHtml(t, '累計');
     h += pdefCardHtml(agg.players.map(e => [e.pid, e.stat]), t, rvNameAny, '累計');
@@ -4645,7 +4646,7 @@ function reportHtml(m) {
     const runTxt = r => r.n ? `${r.n} 分（第 ${r.set} 局）` : '—';
     h += `<div class="card rp-card"><h2>${scope}：團隊指標 <button class="qbtn" data-action="stat-defs" aria-label="指標怎麼算">?</button></h2>
         ${metricRow('攻擊', [['得分', a.pt], ['失誤', a.err], ['被守起', a.dug], ['總數', a.total], ['成功率', fmtPct(a.rate)], ['效率', fmtPct(a.eff)]])}
-        ${a.noteHigh ? '<div class="banner-warn">此場未記錄被守起，成功率會偏高。</div>' : ''}
+        ${a.noteHigh ? '<div class="banner-warn">此場還沒有記被守起（在逐球覆盤記），成功率會偏高。</div>' : ''}
         ${metricRow('發球', [['得分', sv.pt], ['失誤', sv.err], ['總數', sv.total === null ? '—' : sv.total], ['成功率', fmtPct(sv.rate)], ['ACE率', fmtPct(sv.ace)]])}
         ${metricRow('攔網', [['得分', t.block.pt], ['失誤', t.block.err]])}
         ${metricRow('接發', rcv.total ? [['到位', rcv.good], ['需要跑動', rcv.run], ['壞球', rcv.bad], ['失誤', rcv.err], ['到位率', fmtPct(rcv.rate)]] : [['', '—（還沒有逐球覆盤）']])}
@@ -4741,7 +4742,7 @@ ACT['reopen-match'] = el => {
 ui.review = null;
 const rvMatch = () => DB.matches[ui.review.matchId];
 function rvScope() { return { setIdx: ui.review.setIdx === null ? undefined : ui.review.setIdx, serveThemOnly: ui.review.serveOnly }; }
-function rvReset() { Object.assign(ui.review, { recvP: null, dig: null, resolveP: null, sto: null, dugOpen: false }); }
+function rvReset() { Object.assign(ui.review, { recvP: null, dig: null, resolveP: null, sto: null }); }
 function rvRebuild(jumpToFirstUndone) {
     const m = rvMatch(), q = reviewQueue(m, rvScope());
     ui.review.order = q.map(it => it.id);
@@ -4855,8 +4856,7 @@ function renderReview() {
     else h += `<div class="note">${esc(rvName(m, dg.p))}${dg.type ? '・' + esc(typeName(dg.type)) : ''}這一球起得如何？</div><div class="rv-grades three">${QUALITY_LEVELS.map(q => `<button class="${q[0]}" data-action="rv-dig-q" data-q="${q[0]}">${q[1]}</button>`).join('')}</div>${cancelBtn}`;
     h += '</div>';
     const dug = e.attacksDug || [];
-    const dugOpen = dug.length || rv.dugOpen;
-    h += `<div class="rv-sec">${rvSecHead('攻擊被守起（賽中沒記到的）', dug.length ? dug.length + ' 筆' : '', null, dugOpen ? '' : '選填', dugOpen ? '' : 'rv-dug-open')}${dugOpen ? `${dug.length ? `<div class="chips">${dug.map((pid, i) => `<button class="chip on" data-action="rv-dug-del" data-i="${i}">${esc(rvName(m, pid))} ✕</button>`).join('')}</div>` : ''}${rvChips(m, item, 'rv-dug-p', null)}` : ''}</div>`;
+    h += `<div class="rv-sec">${rvSecHead('攻擊被守起（這球中途被對方接起來的攻擊；可多次）', dug.length ? dug.length + ' 筆' : '', null)}${dug.length ? `<div class="chips">${dug.map((pid, i) => `<button class="chip on" data-action="rv-dug-del" data-i="${i}">${esc(rvName(m, pid))} ✕</button>`).join('')}</div>` : ''}${rvChips(m, item, 'rv-dug-p', null)}</div>`;
     h += `<button type="button" class="chip${rv.all ? ' on' : ''}" data-action="rv-all">${rv.all ? '只列場上球員' : '列出全部球員'}</button></div>
         <div class="rv-nav sticky"><button class="btn-solid ghost" data-action="rv-prev" ${rv.idx ? '' : 'disabled'}>← 上一球</button><button class="btn-solid ghost" data-action="rv-skip">跳過</button><button class="btn-solid brand" data-action="rv-next">${rv.idx >= rv.order.length - 1 ? '完成' : '下一球 →'}</button></div></div>`;
     const keep = renderReview.last === rid ? page.scrollTop : 0;
@@ -4883,7 +4883,6 @@ SHEETS.rvHelp = d => {
 };
 ACT['rv-help'] = el => openSheet('rvHelp', { k: el.dataset.k });
 ACT['rv-more'] = () => { ui.review.more = !ui.review.more; render(); };
-ACT['rv-dug-open'] = () => { ui.review.dugOpen = true; render(); };
 // 左右滑動換球：往左 = 下一球（同「下一球」按鈕），往右 = 上一球
 (function () {
     let x0 = null, y0 = 0, t0 = 0;
